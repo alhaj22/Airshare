@@ -1,0 +1,42 @@
+[package]
+name = "airdesk"
+version = "0.1.0"
+description = "AirDesk - Seamless Mouse, Keyboard and Clipboard sharing between Windows & Mac"
+authors = ["AirDesk Team"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.36", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+rand = "0.8"
+arboard = "3.3"
+chrono = { version = "0.4", features = ["serde"] }
+local-ip-address = "0.6"
+log = "0.4"
+env_logger = "0.11"
+lazy_static = "1.4"
+socket2 = "0.5"
+hostname = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Threading"
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.23"
+core-foundation = "0.9"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
