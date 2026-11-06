@@ -28,6 +28,7 @@ lazy_static::lazy_static! {
     static ref SCREEN_DIMENSIONS: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((1366, 768));
     static ref LAST_CURSOR: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((0, 0));
     static ref VERTICAL_OFFSET_RATIO: std::sync::RwLock<f32> = std::sync::RwLock::new(0.0);
+    static ref VIRTUAL_REMOTE_POS: std::sync::RwLock<(f32, f32)> = std::sync::RwLock::new((0.0, 0.5));
 }
 
 pub struct MouseEdgeMonitor {
@@ -86,6 +87,8 @@ impl MouseEdgeMonitor {
             if let Ok(mut scr) = CURRENT_ACTIVE_SCREEN.write() {
                 *scr = screen;
             }
+            crate::keyboard::set_keyboard_active_screen(screen);
+
             if screen == ActiveScreen::Host {
                 unsafe {
                     windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor(std::ptr::null());
@@ -149,7 +152,7 @@ impl MouseEdgeMonitor {
                         let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1366, 768));
 
                         if active_screen == ActiveScreen::Host {
-                            // Boundary detection
+                            // Boundary detection to cross over to remote device
                             let crossed = match arrangement {
                                 ScreenArrangement::HostLeftClientRight => x >= screen_w - 2,
                                 ScreenArrangement::HostRightClientLeft => x <= 1,
@@ -160,8 +163,15 @@ impl MouseEdgeMonitor {
                             if crossed {
                                 let offset = VERTICAL_OFFSET_RATIO.read().map(|o| *o).unwrap_or(0.0);
                                 let y_ratio = ((y as f32 / screen_h as f32) - offset).clamp(0.0, 1.0);
+
                                 if let Ok(mut s) = CURRENT_ACTIVE_SCREEN.write() {
                                     *s = ActiveScreen::Client;
+                                }
+                                crate::keyboard::set_keyboard_active_screen(ActiveScreen::Client);
+
+                                // Initialize virtual remote cursor position
+                                if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
+                                    *rpos = (15.0, y as f32);
                                 }
 
                                 let center_x = screen_w / 2;
@@ -189,7 +199,7 @@ impl MouseEdgeMonitor {
                                 return 1; // Suppress event on host
                             }
                         } else {
-                            // Client is active: stream events and swallow locally
+                            // Client is active: stream mouse moves to Mac and detect when user returns to Windows!
                             let center_x = screen_w / 2;
                             let center_y = screen_h / 2;
 
@@ -199,7 +209,68 @@ impl MouseEdgeMonitor {
                                         WM_MOUSEMOVE => {
                                             let dx = x - center_x;
                                             let dy = y - center_y;
+
                                             if dx != 0 || dy != 0 {
+                                                let mut should_switch_back = false;
+                                                let mut return_y_ratio = 0.5f32;
+
+                                                // Update virtual cursor position on remote screen
+                                                if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
+                                                    rpos.0 += dx as f32;
+                                                    rpos.1 = (rpos.1 + dy as f32).clamp(0.0, screen_h as f32);
+                                                    return_y_ratio = (rpos.1 / screen_h as f32).clamp(0.0, 1.0);
+
+                                                    match arrangement {
+                                                        ScreenArrangement::HostLeftClientRight => {
+                                                            // Crossing back from Mac left edge into Windows right edge
+                                                            if rpos.0 <= 0.0 && dx < 0 {
+                                                                should_switch_back = true;
+                                                            }
+                                                        }
+                                                        ScreenArrangement::HostRightClientLeft => {
+                                                            // Crossing back from Mac right edge into Windows left edge
+                                                            if rpos.0 >= 1440.0 && dx > 0 {
+                                                                should_switch_back = true;
+                                                            }
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                }
+
+                                                if should_switch_back {
+                                                    // Return cursor and keyboard control to Host!
+                                                    if let Ok(mut s) = CURRENT_ACTIVE_SCREEN.write() {
+                                                        *s = ActiveScreen::Host;
+                                                    }
+                                                    crate::keyboard::set_keyboard_active_screen(ActiveScreen::Host);
+
+                                                    let return_y = (return_y_ratio * screen_h as f32) as i32;
+                                                    match arrangement {
+                                                        ScreenArrangement::HostLeftClientRight => {
+                                                            SetCursorPos(screen_w - 25, return_y);
+                                                        }
+                                                        ScreenArrangement::HostRightClientLeft => {
+                                                            SetCursorPos(25, return_y);
+                                                        }
+                                                        _ => {
+                                                            SetCursorPos(center_x, center_y);
+                                                        }
+                                                    }
+
+                                                    let _ = tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
+                                                        active_device: "host".to_string(),
+                                                        entry_y_ratio: return_y_ratio,
+                                                    }));
+
+                                                    if let Ok(ui_guard) = UI_EVENT_TX.lock() {
+                                                        if let Some(ui_tx) = &*ui_guard {
+                                                            let _ = ui_tx.send("active_screen:host".to_string());
+                                                        }
+                                                    }
+
+                                                    return 1;
+                                                }
+
                                                 let _ = tx.send(NetworkMessage::MouseMove(MouseMovePayload {
                                                     dx,
                                                     dy,

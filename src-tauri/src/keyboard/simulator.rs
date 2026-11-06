@@ -19,6 +19,7 @@ mod macos {
             stringLength: usize,
             unicodeString: *const u16,
         );
+        pub fn CGEventSetFlags(event: *mut c_void, flags: u64);
         pub fn CGEventPost(tap: u32, event: *mut c_void);
         pub fn CFRelease(cf: *mut c_void);
     }
@@ -120,7 +121,6 @@ impl KeyboardSimulator {
         #[cfg(windows)]
         unsafe {
             if let Some(ch) = key_char {
-                // Unicode character input
                 for c in ch.encode_utf16() {
                     let flags = if is_down { KEYEVENTF_UNICODE } else { KEYEVENTF_UNICODE | KEYEVENTF_KEYUP };
                     let mut input = INPUT {
@@ -138,7 +138,6 @@ impl KeyboardSimulator {
                     SendInput(1, &mut input, std::mem::size_of::<INPUT>() as i32);
                 }
             } else {
-                // Virtual key code input
                 let flags = if is_down { 0 } else { KEYEVENTF_KEYUP };
                 let mut input = INPUT {
                     r#type: INPUT_KEYBOARD,
@@ -160,25 +159,18 @@ impl KeyboardSimulator {
         unsafe {
             use macos::*;
             let mac_code = win_vk_to_mac_key(vk_code);
-            if mac_code != 0xFFFF {
-                let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), mac_code, is_down);
-                if !evt.is_null() {
-                    if let Some(ch) = key_char {
-                        let utf16: Vec<u16> = ch.encode_utf16().collect();
-                        CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
-                    }
-                    CGEventPost(0 /* kCGHIDEventTap */, evt);
-                    CFRelease(evt);
-                }
-            } else if let Some(ch) = key_char {
-                // Fallback for unmapped characters: use dummy key and set unicode string
-                let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), 0, is_down);
-                if !evt.is_null() {
+            let code_to_use = if mac_code != 0xFFFF { mac_code } else { 0 };
+
+            let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), code_to_use, is_down);
+            if !evt.is_null() {
+                if let Some(ch) = key_char {
                     let utf16: Vec<u16> = ch.encode_utf16().collect();
                     CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
-                    CGEventPost(0, evt);
-                    CFRelease(evt);
                 }
+                // Post to both SessionEventTap (1) and HIDEventTap (0)
+                CGEventPost(1 /* kCGSessionEventTap */, evt);
+                CGEventPost(0 /* kCGHIDEventTap */, evt);
+                CFRelease(evt);
             }
         }
     }
