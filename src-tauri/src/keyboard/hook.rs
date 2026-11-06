@@ -6,17 +6,17 @@ use log::info;
 use crate::mouse::ActiveScreen;
 use crate::network::protocol::{KeyEventPayload, NetworkMessage};
 
+#[cfg(windows)]
+lazy_static::lazy_static! {
+    static ref KB_HOOK_TX: std::sync::Mutex<Option<mpsc::UnboundedSender<NetworkMessage>>> = std::sync::Mutex::new(None);
+    static ref SWITCH_BACK_TX: std::sync::Mutex<Option<mpsc::UnboundedSender<()>>> = std::sync::Mutex::new(None);
+    static ref KB_ACTIVE_SCREEN: std::sync::RwLock<ActiveScreen> = std::sync::RwLock::new(ActiveScreen::Host);
+}
+
 pub struct KeyboardHookManager {
     is_running: Arc<AtomicBool>,
     active_screen: Arc<RwLock<ActiveScreen>>,
 }
-
-#[cfg(windows)]
-static mut KB_HOOK_TX: Option<mpsc::UnboundedSender<NetworkMessage>> = None;
-#[cfg(windows)]
-static mut SWITCH_BACK_TX: Option<mpsc::UnboundedSender<()>> = None;
-#[cfg(windows)]
-static mut KB_ACTIVE_SCREEN: ActiveScreen = ActiveScreen::Host;
 
 impl KeyboardHookManager {
     pub fn new(active_screen: Arc<RwLock<ActiveScreen>>) -> Self {
@@ -28,8 +28,10 @@ impl KeyboardHookManager {
 
     pub fn update_active_screen(&self, screen: ActiveScreen) {
         #[cfg(windows)]
-        unsafe {
-            KB_ACTIVE_SCREEN = screen;
+        {
+            if let Ok(mut scr) = KB_ACTIVE_SCREEN.write() {
+                *scr = screen;
+            }
         }
     }
 
@@ -42,10 +44,18 @@ impl KeyboardHookManager {
         let is_running = self.is_running.clone();
 
         #[cfg(windows)]
-        unsafe {
-            KB_HOOK_TX = Some(network_tx);
-            SWITCH_BACK_TX = Some(switch_back_tx);
-            KB_ACTIVE_SCREEN = *self.active_screen.blocking_read();
+        {
+            if let Ok(mut tx) = KB_HOOK_TX.lock() {
+                *tx = Some(network_tx);
+            }
+            if let Ok(mut sw_tx) = SWITCH_BACK_TX.lock() {
+                *sw_tx = Some(switch_back_tx);
+            }
+            if let Ok(init_screen) = self.active_screen.try_read() {
+                if let Ok(mut scr) = KB_ACTIVE_SCREEN.write() {
+                    *scr = *init_screen;
+                }
+            }
         }
 
         std::thread::spawn(move || {
@@ -83,16 +93,22 @@ impl KeyboardHookManager {
 
                             if ctrl && alt && shift {
                                 info!("Emergency recall activated! Returning control to Host.");
-                                KB_ACTIVE_SCREEN = ActiveScreen::Host;
-                                if let Some(sw_tx) = &SWITCH_BACK_TX {
-                                    let _ = sw_tx.send(());
+                                if let Ok(mut scr) = KB_ACTIVE_SCREEN.write() {
+                                    *scr = ActiveScreen::Host;
+                                }
+                                if let Ok(sw_guard) = SWITCH_BACK_TX.lock() {
+                                    if let Some(sw_tx) = &*sw_guard {
+                                        let _ = sw_tx.send(());
+                                    }
                                 }
                                 return 1; // Swallow escape key
                             }
                         }
 
+                        let active = KB_ACTIVE_SCREEN.read().map(|s| *s).unwrap_or(ActiveScreen::Host);
+
                         // If remote client is active: intercept all keystrokes and send them over network
-                        if KB_ACTIVE_SCREEN == ActiveScreen::Client && (is_down || is_up) {
+                        if active == ActiveScreen::Client && (is_down || is_up) {
                             let mut modifiers: u8 = 0;
                             if (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0 {
                                 modifiers |= 1;
@@ -104,13 +120,15 @@ impl KeyboardHookManager {
                                 modifiers |= 4;
                             }
 
-                            if let Some(tx) = &KB_HOOK_TX {
-                                let _ = tx.send(NetworkMessage::KeyEvent(KeyEventPayload {
-                                    key_code: vk_code,
-                                    key_char: None,
-                                    state: if is_down { 1 } else { 0 },
-                                    modifiers,
-                                }));
+                            if let Ok(tx_guard) = KB_HOOK_TX.lock() {
+                                if let Some(tx) = &*tx_guard {
+                                    let _ = tx.send(NetworkMessage::KeyEvent(KeyEventPayload {
+                                        key_code: vk_code,
+                                        key_char: None,
+                                        state: if is_down { 1 } else { 0 },
+                                        modifiers,
+                                    }));
+                                }
                             }
 
                             return 1; // Block event from typing locally on host!

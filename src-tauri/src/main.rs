@@ -104,7 +104,7 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
     // Emergency recall listener
     let edge_mon_clone = state.edge_monitor.clone();
     let kb_hook_clone = state.keyboard_hook.clone();
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         while let Some(()) = switch_back_rx.recv().await {
             edge_mon_clone.set_active_screen(ActiveScreen::Host).await;
             kb_hook_clone.update_active_screen(ActiveScreen::Host);
@@ -119,7 +119,7 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
     let k_sim = state.keyboard_sim.clone();
     let transfers = state.active_transfers.clone();
 
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         while let Some(msg) = msg_rx.recv().await {
             match msg {
                 NetworkMessage::ClipboardSync(p) => {
@@ -204,7 +204,7 @@ async fn join_connection(
     let kb_hook = state.keyboard_hook.clone();
     let transfers = state.active_transfers.clone();
 
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         while let Some(msg) = incoming_rx.recv().await {
             match msg {
                 NetworkMessage::MouseMove(p) => {
@@ -370,11 +370,7 @@ fn main() {
     let mouse_sim = Arc::new(MouseSimulator::new(1920, 1080));
     let keyboard_sim = Arc::new(KeyboardSimulator::new());
 
-    // Start local discovery beacon listener
     let disc_clone = discovery.clone();
-    tokio::spawn(async move {
-        let _ = disc_clone.start().await;
-    });
 
     let app_state = AppState {
         pin_manager: pin_mgr,
@@ -392,6 +388,12 @@ fn main() {
 
     tauri::Builder::default()
         .manage(app_state)
+        .setup(move |_app| {
+            tauri::async_runtime::spawn(async move {
+                let _ = disc_clone.start().await;
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_system_info,
             create_connection_pin,

@@ -19,42 +19,36 @@ pub enum ActiveScreen {
     Client,
 }
 
+#[cfg(windows)]
+lazy_static::lazy_static! {
+    static ref MOUSE_HOOK_TX: std::sync::Mutex<Option<mpsc::UnboundedSender<NetworkMessage>>> = std::sync::Mutex::new(None);
+    static ref UI_EVENT_TX: std::sync::Mutex<Option<mpsc::UnboundedSender<String>>> = std::sync::Mutex::new(None);
+    static ref CURRENT_ARRANGEMENT: std::sync::RwLock<ScreenArrangement> = std::sync::RwLock::new(ScreenArrangement::HostLeftClientRight);
+    static ref CURRENT_ACTIVE_SCREEN: std::sync::RwLock<ActiveScreen> = std::sync::RwLock::new(ActiveScreen::Host);
+    static ref SCREEN_DIMENSIONS: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((1920, 1080));
+    static ref LAST_CURSOR: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((0, 0));
+}
+
 pub struct MouseEdgeMonitor {
-    screen_width: u32,
-    screen_height: u32,
+    _screen_width: u32,
+    _screen_height: u32,
     arrangement: Arc<RwLock<ScreenArrangement>>,
     active_screen: Arc<RwLock<ActiveScreen>>,
     is_running: Arc<AtomicBool>,
 }
 
-#[cfg(windows)]
-static mut MOUSE_HOOK_TX: Option<mpsc::UnboundedSender<NetworkMessage>> = None;
-#[cfg(windows)]
-static mut UI_EVENT_TX: Option<mpsc::UnboundedSender<String>> = None;
-#[cfg(windows)]
-static mut CURRENT_ARRANGEMENT: ScreenArrangement = ScreenArrangement::HostLeftClientRight;
-#[cfg(windows)]
-static mut CURRENT_ACTIVE_SCREEN: ActiveScreen = ActiveScreen::Host;
-#[cfg(windows)]
-static mut SCREEN_W: i32 = 1920;
-#[cfg(windows)]
-static mut SCREEN_H: i32 = 1080;
-#[cfg(windows)]
-static mut LAST_CURSOR_X: i32 = 0;
-#[cfg(windows)]
-static mut LAST_CURSOR_Y: i32 = 0;
-
 impl MouseEdgeMonitor {
     pub fn new(screen_width: u32, screen_height: u32) -> Self {
         #[cfg(windows)]
-        unsafe {
-            SCREEN_W = screen_width as i32;
-            SCREEN_H = screen_height as i32;
+        {
+            if let Ok(mut dims) = SCREEN_DIMENSIONS.write() {
+                *dims = (screen_width as i32, screen_height as i32);
+            }
         }
 
         Self {
-            screen_width,
-            screen_height,
+            _screen_width: screen_width,
+            _screen_height: screen_height,
             arrangement: Arc::new(RwLock::new(ScreenArrangement::HostLeftClientRight)),
             active_screen: Arc::new(RwLock::new(ActiveScreen::Host)),
             is_running: Arc::new(AtomicBool::new(false)),
@@ -64,8 +58,10 @@ impl MouseEdgeMonitor {
     pub async fn set_arrangement(&self, arrangement: ScreenArrangement) {
         *self.arrangement.write().await = arrangement;
         #[cfg(windows)]
-        unsafe {
-            CURRENT_ARRANGEMENT = arrangement;
+        {
+            if let Ok(mut arr) = CURRENT_ARRANGEMENT.write() {
+                *arr = arrangement;
+            }
         }
     }
 
@@ -76,11 +72,14 @@ impl MouseEdgeMonitor {
     pub async fn set_active_screen(&self, screen: ActiveScreen) {
         *self.active_screen.write().await = screen;
         #[cfg(windows)]
-        unsafe {
-            CURRENT_ACTIVE_SCREEN = screen;
+        {
+            if let Ok(mut scr) = CURRENT_ACTIVE_SCREEN.write() {
+                *scr = screen;
+            }
             if screen == ActiveScreen::Host {
-                // Unpark host cursor
-                windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor(std::ptr::null());
+                unsafe {
+                    windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor(std::ptr::null());
+                }
             }
         }
     }
@@ -94,11 +93,13 @@ impl MouseEdgeMonitor {
         let is_running = self.is_running.clone();
 
         #[cfg(windows)]
-        unsafe {
-            MOUSE_HOOK_TX = Some(network_tx);
-            UI_EVENT_TX = Some(ui_event_tx);
-            CURRENT_ARRANGEMENT = *self.arrangement.blocking_read();
-            CURRENT_ACTIVE_SCREEN = *self.active_screen.blocking_read();
+        {
+            if let Ok(mut tx) = MOUSE_HOOK_TX.lock() {
+                *tx = Some(network_tx);
+            }
+            if let Ok(mut ui_tx) = UI_EVENT_TX.lock() {
+                *ui_tx = Some(ui_event_tx);
+            }
         }
 
         std::thread::spawn(move || {
@@ -123,83 +124,99 @@ impl MouseEdgeMonitor {
                         let x = ms.pt.x;
                         let y = ms.pt.y;
 
-                        if CURRENT_ACTIVE_SCREEN == ActiveScreen::Host {
+                        let active_screen = CURRENT_ACTIVE_SCREEN.read().map(|s| *s).unwrap_or(ActiveScreen::Host);
+                        let arrangement = CURRENT_ARRANGEMENT.read().map(|a| *a).unwrap_or(ScreenArrangement::HostLeftClientRight);
+                        let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1920, 1080));
+
+                        if active_screen == ActiveScreen::Host {
                             // Boundary detection
-                            let crossed = match CURRENT_ARRANGEMENT {
-                                ScreenArrangement::HostLeftClientRight => x >= SCREEN_W - 2,
+                            let crossed = match arrangement {
+                                ScreenArrangement::HostLeftClientRight => x >= screen_w - 2,
                                 ScreenArrangement::HostRightClientLeft => x <= 1,
-                                ScreenArrangement::HostTopClientBottom => y >= SCREEN_H - 2,
+                                ScreenArrangement::HostTopClientBottom => y >= screen_h - 2,
                                 ScreenArrangement::HostBottomClientTop => y <= 1,
                             };
 
                             if crossed {
-                                let y_ratio = (y as f32 / SCREEN_H as f32).clamp(0.0, 1.0);
-                                CURRENT_ACTIVE_SCREEN = ActiveScreen::Client;
-                                LAST_CURSOR_X = x;
-                                LAST_CURSOR_Y = y;
-
-                                if let Some(tx) = &MOUSE_HOOK_TX {
-                                    let _ = tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
-                                        active_device: "client".to_string(),
-                                        entry_y_ratio: y_ratio,
-                                    }));
+                                let y_ratio = (y as f32 / screen_h as f32).clamp(0.0, 1.0);
+                                if let Ok(mut s) = CURRENT_ACTIVE_SCREEN.write() {
+                                    *s = ActiveScreen::Client;
+                                }
+                                if let Ok(mut last) = LAST_CURSOR.write() {
+                                    *last = (x, y);
                                 }
 
-                                if let Some(ui_tx) = &UI_EVENT_TX {
-                                    let _ = ui_tx.send("active_screen:client".to_string());
+                                if let Ok(tx_guard) = MOUSE_HOOK_TX.lock() {
+                                    if let Some(tx) = &*tx_guard {
+                                        let _ = tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
+                                            active_device: "client".to_string(),
+                                            entry_y_ratio: y_ratio,
+                                        }));
+                                    }
+                                }
+
+                                if let Ok(ui_guard) = UI_EVENT_TX.lock() {
+                                    if let Some(ui_tx) = &*ui_guard {
+                                        let _ = ui_tx.send("active_screen:client".to_string());
+                                    }
                                 }
 
                                 return 1; // Suppress event on host
                             }
                         } else {
                             // Client is active: stream events and swallow locally
-                            if let Some(tx) = &MOUSE_HOOK_TX {
-                                match w_param as u32 {
-                                    WM_MOUSEMOVE => {
-                                        let dx = x - LAST_CURSOR_X;
-                                        let dy = y - LAST_CURSOR_Y;
-                                        if dx != 0 || dy != 0 {
-                                            let _ = tx.send(NetworkMessage::MouseMove(MouseMovePayload {
-                                                dx,
-                                                dy,
-                                                abs_x: None,
-                                                abs_y: None,
-                                            }));
+                            let (last_x, last_y) = LAST_CURSOR.read().map(|l| *l).unwrap_or((0, 0));
+
+                            if let Ok(tx_guard) = MOUSE_HOOK_TX.lock() {
+                                if let Some(tx) = &*tx_guard {
+                                    match w_param as u32 {
+                                        WM_MOUSEMOVE => {
+                                            let dx = x - last_x;
+                                            let dy = y - last_y;
+                                            if dx != 0 || dy != 0 {
+                                                let _ = tx.send(NetworkMessage::MouseMove(MouseMovePayload {
+                                                    dx,
+                                                    dy,
+                                                    abs_x: None,
+                                                    abs_y: None,
+                                                }));
+                                            }
+                                            if let Ok(mut last) = LAST_CURSOR.write() {
+                                                *last = (x, y);
+                                            }
+                                            return 1;
                                         }
-                                        LAST_CURSOR_X = x;
-                                        LAST_CURSOR_Y = y;
-                                        return 1;
+                                        WM_LBUTTONDOWN => {
+                                            let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 0, state: 1 }));
+                                            return 1;
+                                        }
+                                        WM_LBUTTONUP => {
+                                            let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 0, state: 0 }));
+                                            return 1;
+                                        }
+                                        WM_RBUTTONDOWN => {
+                                            let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 1, state: 1 }));
+                                            return 1;
+                                        }
+                                        WM_RBUTTONUP => {
+                                            let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 1, state: 0 }));
+                                            return 1;
+                                        }
+                                        WM_MBUTTONDOWN => {
+                                            let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 2, state: 1 }));
+                                            return 1;
+                                        }
+                                        WM_MBUTTONUP => {
+                                            let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 2, state: 0 }));
+                                            return 1;
+                                        }
+                                        WM_MOUSEWHEEL => {
+                                            let delta = ((ms.mouseData >> 16) as i16 as i32) / 120;
+                                            let _ = tx.send(NetworkMessage::MouseWheel(MouseWheelPayload { delta_x: 0, delta_y: delta }));
+                                            return 1;
+                                        }
+                                        _ => {}
                                     }
-                                    WM_LBUTTONDOWN => {
-                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 0, state: 1 }));
-                                        return 1;
-                                    }
-                                    WM_LBUTTONUP => {
-                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 0, state: 0 }));
-                                        return 1;
-                                    }
-                                    WM_RBUTTONDOWN => {
-                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 1, state: 1 }));
-                                        return 1;
-                                    }
-                                    WM_RBUTTONUP => {
-                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 1, state: 0 }));
-                                        return 1;
-                                    }
-                                    WM_MBUTTONDOWN => {
-                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 2, state: 1 }));
-                                        return 1;
-                                    }
-                                    WM_MBUTTONUP => {
-                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 2, state: 0 }));
-                                        return 1;
-                                    }
-                                    WM_MOUSEWHEEL => {
-                                        let delta = ((ms.mouseData >> 16) as i16 as i32) / 120;
-                                        let _ = tx.send(NetworkMessage::MouseWheel(MouseWheelPayload { delta_x: 0, delta_y: delta }));
-                                        return 1;
-                                    }
-                                    _ => {}
                                 }
                             }
                         }
