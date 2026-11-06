@@ -2,13 +2,13 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use log::{error, info, warn};
 
 use super::protocol::{
     serialize_message, NetworkMessage, PairResponsePayload,
 };
-use crate::security::{PairedDevice, PendingClient, SharedPinManager};
+use crate::security::{PairedDevice, SharedPinManager};
 
 pub const DEFAULT_PORT: u16 = 42426;
 
@@ -53,7 +53,8 @@ impl NetworkServer {
         *self.is_running.write().await = true;
         let is_running_clone = self.is_running.clone();
         let pin_mgr_clone = self.pin_manager.clone();
-        let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<NetworkMessage>();
+        let (outbound_tx, outbound_rx) = mpsc::unbounded_channel::<NetworkMessage>();
+        let shared_outbound_rx = Arc::new(Mutex::new(outbound_rx));
         self.outbound_tx = Some(outbound_tx);
 
         let host_name = self.host_name.clone();
@@ -69,6 +70,7 @@ impl NetworkServer {
                         let pin_mgr = pin_mgr_clone.clone();
                         let in_tx = incoming_msg_tx.clone();
                         let status_tx = connection_status_tx.clone();
+                        let out_rx = shared_outbound_rx.clone();
                         let h_name = host_name.clone();
                         let h_os = host_os.clone();
 
@@ -79,6 +81,7 @@ impl NetworkServer {
                                 pin_mgr,
                                 in_tx,
                                 status_tx,
+                                out_rx,
                                 h_name,
                                 h_os,
                                 screen_w,
@@ -120,6 +123,7 @@ impl NetworkServer {
         pin_manager: SharedPinManager,
         incoming_tx: mpsc::UnboundedSender<NetworkMessage>,
         status_tx: mpsc::UnboundedSender<String>,
+        outbound_rx: Arc<Mutex<mpsc::UnboundedReceiver<NetworkMessage>>>,
         host_name: String,
         host_os: String,
         screen_w: u32,
@@ -184,6 +188,27 @@ impl NetworkServer {
 
                 // Step 3: Stream message handling loop
                 let (mut reader, mut writer) = stream.into_split();
+
+                // Writer task
+                let out_rx_clone = outbound_rx.clone();
+                tokio::spawn(async move {
+                    loop {
+                        let maybe_msg = {
+                            let mut rx = out_rx_clone.lock().await;
+                            rx.recv().await
+                        };
+
+                        if let Some(msg) = maybe_msg {
+                            if let Ok(bytes) = serialize_message(&msg) {
+                                if writer.write_all(&bytes).await.is_err() {
+                                    break;
+                                }
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                });
 
                 // Reader loop
                 let in_tx = incoming_tx.clone();

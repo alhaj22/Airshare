@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use log::{debug, error, info};
+use log::{error, info};
 
 use crate::network::protocol::{ClipboardSyncPayload, NetworkMessage};
 
@@ -43,7 +43,7 @@ impl ClipboardWatcher {
             while is_running.load(Ordering::SeqCst) {
                 if let Ok(text) = clipboard.get_text() {
                     let hash = calculate_hash(&text);
-                    let mut current_hash = {
+                    let current_hash = {
                         let rt = tokio::runtime::Handle::try_current();
                         match rt {
                             Ok(h) => h.block_on(async { *last_hash.read().await }),

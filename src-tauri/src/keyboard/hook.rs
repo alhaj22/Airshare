@@ -117,7 +117,7 @@ impl KeyboardHookManager {
                         }
                     }
 
-                    CallNextHookEx(std::ptr::null_mut(), n_code, w_param, l_param)
+                    CallNextHookEx(0, n_code, w_param, l_param)
                 }
 
                 let hook = SetWindowsHookExW(
@@ -127,13 +127,13 @@ impl KeyboardHookManager {
                     0,
                 );
 
-                if hook.is_null() {
+                if hook == 0 {
                     log::error!("Failed to install low-level keyboard hook");
                     return;
                 }
 
                 let mut msg: MSG = std::mem::zeroed();
-                while is_running.load(Ordering::SeqCst) && GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                while is_running.load(Ordering::SeqCst) && GetMessageW(&mut msg, 0, 0, 0) > 0 {
                     DispatchMessageW(&msg);
                 }
 

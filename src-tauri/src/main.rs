@@ -21,7 +21,7 @@ use discovery::{DiscoveredDevice, DiscoveryBeacon};
 use keyboard::{KeyboardHookManager, KeyboardSimulator};
 use mouse::{ActiveScreen, MouseEdgeMonitor, MouseSimulator, ScreenArrangement};
 use network::{NetworkClient, NetworkMessage, NetworkServer};
-use security::{create_shared_pin_manager, PairedDevice, SharedPinManager};
+use security::{create_shared_pin_manager, SharedPinManager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemInfo {

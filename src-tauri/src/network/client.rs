@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, RwLock};
-use log::{error, info, warn};
+use log::info;
 
 use super::protocol::{
     serialize_message, NetworkMessage, PairRequestPayload,
