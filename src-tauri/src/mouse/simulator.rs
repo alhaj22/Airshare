@@ -7,16 +7,49 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
 
+#[cfg(target_os = "macos")]
+mod macos {
+    use std::os::raw::c_void;
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct CGPoint {
+        pub x: f64,
+        pub y: f64,
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        pub fn CGWarpMouseCursorPosition(newCursorPosition: CGPoint) -> i32;
+        pub fn CGEventCreate(source: *mut c_void) -> *mut c_void;
+        pub fn CGEventGetLocation(event: *mut c_void) -> CGPoint;
+        pub fn CGEventCreateMouseEvent(
+            source: *mut c_void,
+            mouseType: u32,
+            mouseCursorPosition: CGPoint,
+            mouseButton: u32,
+        ) -> *mut c_void;
+        pub fn CGEventCreateScrollWheelEvent(
+            source: *mut c_void,
+            units: u32,
+            wheelCount: u32,
+            wheel1: i32,
+        ) -> *mut c_void;
+        pub fn CGEventPost(tap: u32, event: *mut c_void);
+        pub fn CFRelease(cf: *mut c_void);
+    }
+}
+
 pub struct MouseSimulator {
-    screen_width: u32,
-    screen_height: u32,
+    _screen_width: u32,
+    _screen_height: u32,
 }
 
 impl MouseSimulator {
     pub fn new(screen_width: u32, screen_height: u32) -> Self {
         Self {
-            screen_width,
-            screen_height,
+            _screen_width: screen_width,
+            _screen_height: screen_height,
         }
     }
 
@@ -40,9 +73,28 @@ impl MouseSimulator {
         }
 
         #[cfg(target_os = "macos")]
-        {
-            // macOS CoreGraphics simulation
-            // In macOS: CGEventCreateMouseEvent with kCGEventMouseMoved
+        unsafe {
+            use macos::*;
+            let dummy = CGEventCreate(std::ptr::null_mut());
+            if !dummy.is_null() {
+                let loc = CGEventGetLocation(dummy);
+                CFRelease(dummy);
+                let new_pos = CGPoint {
+                    x: loc.x + dx as f64,
+                    y: loc.y + dy as f64,
+                };
+                CGWarpMouseCursorPosition(new_pos);
+                let move_evt = CGEventCreateMouseEvent(
+                    std::ptr::null_mut(),
+                    5, // kCGEventMouseMoved
+                    new_pos,
+                    0, // kCGMouseButtonLeft
+                );
+                if !move_evt.is_null() {
+                    CGEventPost(0 /* kCGHIDEventTap */, move_evt);
+                    CFRelease(move_evt);
+                }
+            }
         }
     }
 
@@ -73,8 +125,18 @@ impl MouseSimulator {
         }
 
         #[cfg(target_os = "macos")]
-        {
-            // macOS CoreGraphics CGWarpMouseCursorPosition
+        unsafe {
+            use macos::*;
+            let pos = CGPoint {
+                x: x as f64,
+                y: y as f64,
+            };
+            CGWarpMouseCursorPosition(pos);
+            let move_evt = CGEventCreateMouseEvent(std::ptr::null_mut(), 5, pos, 0);
+            if !move_evt.is_null() {
+                CGEventPost(0, move_evt);
+                CFRelease(move_evt);
+            }
         }
     }
 
@@ -108,8 +170,32 @@ impl MouseSimulator {
         }
 
         #[cfg(target_os = "macos")]
-        {
-            // macOS CoreGraphics mouse button event post
+        unsafe {
+            use macos::*;
+            let dummy = CGEventCreate(std::ptr::null_mut());
+            let loc = if !dummy.is_null() {
+                let l = CGEventGetLocation(dummy);
+                CFRelease(dummy);
+                l
+            } else {
+                CGPoint { x: 0.0, y: 0.0 }
+            };
+
+            let (mouse_type, mouse_btn) = match (button, is_down) {
+                (0, true) => (1 /* kCGEventLeftMouseDown */, 0 /* kCGMouseButtonLeft */),
+                (0, false) => (2 /* kCGEventLeftMouseUp */, 0),
+                (1, true) => (3 /* kCGEventRightMouseDown */, 1 /* kCGMouseButtonRight */),
+                (1, false) => (4 /* kCGEventRightMouseUp */, 1),
+                (2, true) => (25 /* kCGEventOtherMouseDown */, 2 /* kCGMouseButtonCenter */),
+                (2, false) => (26 /* kCGEventOtherMouseUp */, 2),
+                _ => return,
+            };
+
+            let evt = CGEventCreateMouseEvent(std::ptr::null_mut(), mouse_type, loc, mouse_btn);
+            if !evt.is_null() {
+                CGEventPost(0, evt);
+                CFRelease(evt);
+            }
         }
     }
 
@@ -133,8 +219,18 @@ impl MouseSimulator {
         }
 
         #[cfg(target_os = "macos")]
-        {
-            // macOS CoreGraphics scroll wheel event post
+        unsafe {
+            use macos::*;
+            let evt = CGEventCreateScrollWheelEvent(
+                std::ptr::null_mut(),
+                0, // kCGScrollEventUnitPixel
+                1,
+                delta_y * 10,
+            );
+            if !evt.is_null() {
+                CGEventPost(0, evt);
+                CFRelease(evt);
+            }
         }
     }
 }

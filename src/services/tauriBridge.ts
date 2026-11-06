@@ -186,6 +186,20 @@ export const api = {
     };
   },
 
+  async toggleActiveScreen(): Promise<'host' | 'client'> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<'host' | 'client'>('toggle_active_screen');
+      } catch (err) {
+        console.warn('Failed to toggle active screen via Tauri', err);
+      }
+    }
+    const next = mockState.activeScreen === 'host' ? 'client' : 'host';
+    mockState.activeScreen = next;
+    return next;
+  },
+
   // Helper for mock demo to simulate peer connecting or cursor jumping
   simulatePeerConnect(name: string, os: DeviceOS, ip: string) {
     mockState.mode = 'connected';

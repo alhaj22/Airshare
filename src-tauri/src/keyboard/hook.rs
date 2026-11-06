@@ -85,13 +85,13 @@ impl KeyboardHookManager {
                         let is_down = msg_type == WM_KEYDOWN || msg_type == WM_SYSKEYDOWN;
                         let is_up = msg_type == WM_KEYUP || msg_type == WM_SYSKEYUP;
 
-                        // Emergency escape shortcut: Ctrl + Alt + Shift + Escape
-                        if vk_code == VK_ESCAPE as u32 && is_down {
+                        // Emergency escape shortcut: Ctrl + Alt + Shift + Escape OR Pause key
+                        if (vk_code == VK_ESCAPE as u32 && is_down) || (vk_code == 0x13 && is_down) {
                             let ctrl = (GetAsyncKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0;
                             let alt = (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0;
                             let shift = (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0;
 
-                            if ctrl && alt && shift {
+                            if (ctrl && alt && shift) || vk_code == 0x13 {
                                 info!("Emergency recall activated! Returning control to Host.");
                                 if let Ok(mut scr) = KB_ACTIVE_SCREEN.write() {
                                     *scr = ActiveScreen::Host;
@@ -101,7 +101,7 @@ impl KeyboardHookManager {
                                         let _ = sw_tx.send(());
                                     }
                                 }
-                                return 1; // Swallow escape key
+                                return 1; // Swallow escape/pause key
                             }
                         }
 

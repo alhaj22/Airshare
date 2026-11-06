@@ -130,6 +130,10 @@ impl NetworkClient {
         Ok(token)
     }
 
+    pub fn get_outbound_sender(&self) -> Option<mpsc::UnboundedSender<NetworkMessage>> {
+        self.outbound_tx.clone()
+    }
+
     pub fn send_message(&self, msg: NetworkMessage) -> Result<(), &'static str> {
         if let Some(tx) = &self.outbound_tx {
             tx.send(msg).map_err(|_| "Failed to send message: channel closed")

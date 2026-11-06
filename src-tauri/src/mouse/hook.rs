@@ -25,7 +25,7 @@ lazy_static::lazy_static! {
     static ref UI_EVENT_TX: std::sync::Mutex<Option<mpsc::UnboundedSender<String>>> = std::sync::Mutex::new(None);
     static ref CURRENT_ARRANGEMENT: std::sync::RwLock<ScreenArrangement> = std::sync::RwLock::new(ScreenArrangement::HostLeftClientRight);
     static ref CURRENT_ACTIVE_SCREEN: std::sync::RwLock<ActiveScreen> = std::sync::RwLock::new(ActiveScreen::Host);
-    static ref SCREEN_DIMENSIONS: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((1920, 1080));
+    static ref SCREEN_DIMENSIONS: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((1366, 768));
     static ref LAST_CURSOR: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((0, 0));
 }
 
@@ -79,6 +79,16 @@ impl MouseEdgeMonitor {
             if screen == ActiveScreen::Host {
                 unsafe {
                     windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor(std::ptr::null());
+                    let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1366, 768));
+                    // Place cursor back within host screen bounds safely
+                    windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos(screen_w - 30, screen_h / 2);
+                }
+            } else {
+                let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1366, 768));
+                let center_x = screen_w / 2;
+                let center_y = screen_h / 2;
+                unsafe {
+                    windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos(center_x, center_y);
                 }
             }
         }
@@ -108,7 +118,7 @@ impl MouseEdgeMonitor {
                 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
                 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
                 use windows_sys::Win32::UI::WindowsAndMessaging::{
-                    CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW,
+                    CallNextHookEx, DispatchMessageW, GetMessageW, SetCursorPos, SetWindowsHookExW,
                     UnhookWindowsHookEx, MSG, MSLLHOOKSTRUCT, WH_MOUSE_LL,
                     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
                     WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP,
@@ -126,7 +136,7 @@ impl MouseEdgeMonitor {
 
                         let active_screen = CURRENT_ACTIVE_SCREEN.read().map(|s| *s).unwrap_or(ActiveScreen::Host);
                         let arrangement = CURRENT_ARRANGEMENT.read().map(|a| *a).unwrap_or(ScreenArrangement::HostLeftClientRight);
-                        let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1920, 1080));
+                        let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1366, 768));
 
                         if active_screen == ActiveScreen::Host {
                             // Boundary detection
@@ -142,9 +152,13 @@ impl MouseEdgeMonitor {
                                 if let Ok(mut s) = CURRENT_ACTIVE_SCREEN.write() {
                                     *s = ActiveScreen::Client;
                                 }
+
+                                let center_x = screen_w / 2;
+                                let center_y = screen_h / 2;
                                 if let Ok(mut last) = LAST_CURSOR.write() {
-                                    *last = (x, y);
+                                    *last = (center_x, center_y);
                                 }
+                                SetCursorPos(center_x, center_y);
 
                                 if let Ok(tx_guard) = MOUSE_HOOK_TX.lock() {
                                     if let Some(tx) = &*tx_guard {
@@ -165,14 +179,15 @@ impl MouseEdgeMonitor {
                             }
                         } else {
                             // Client is active: stream events and swallow locally
-                            let (last_x, last_y) = LAST_CURSOR.read().map(|l| *l).unwrap_or((0, 0));
+                            let center_x = screen_w / 2;
+                            let center_y = screen_h / 2;
 
                             if let Ok(tx_guard) = MOUSE_HOOK_TX.lock() {
                                 if let Some(tx) = &*tx_guard {
                                     match w_param as u32 {
                                         WM_MOUSEMOVE => {
-                                            let dx = x - last_x;
-                                            let dy = y - last_y;
+                                            let dx = x - center_x;
+                                            let dy = y - center_y;
                                             if dx != 0 || dy != 0 {
                                                 let _ = tx.send(NetworkMessage::MouseMove(MouseMovePayload {
                                                     dx,
@@ -180,9 +195,7 @@ impl MouseEdgeMonitor {
                                                     abs_x: None,
                                                     abs_y: None,
                                                 }));
-                                            }
-                                            if let Ok(mut last) = LAST_CURSOR.write() {
-                                                *last = (x, y);
+                                                SetCursorPos(center_x, center_y);
                                             }
                                             return 1;
                                         }
@@ -219,6 +232,7 @@ impl MouseEdgeMonitor {
                                     }
                                 }
                             }
+                            return 1;
                         }
                     }
 

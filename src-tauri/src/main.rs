@@ -20,8 +20,28 @@ use clipboard::ClipboardWatcher;
 use discovery::{DiscoveredDevice, DiscoveryBeacon};
 use keyboard::{KeyboardHookManager, KeyboardSimulator};
 use mouse::{ActiveScreen, MouseEdgeMonitor, MouseSimulator, ScreenArrangement};
+use network::protocol::SwitchScreenPayload;
 use network::{NetworkClient, NetworkMessage, NetworkServer};
 use security::{create_shared_pin_manager, SharedPinManager};
+
+#[cfg(windows)]
+fn get_screen_resolution() -> (u32, u32) {
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+        let w = GetSystemMetrics(SM_CXSCREEN);
+        let h = GetSystemMetrics(SM_CYSCREEN);
+        if w > 0 && h > 0 {
+            (w as u32, h as u32)
+        } else {
+            (1920, 1080)
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn get_screen_resolution() -> (u32, u32) {
+    (1920, 1080)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemInfo {
@@ -65,7 +85,11 @@ pub struct AppState {
 
 #[tauri::command]
 async fn get_system_info(state: tauri::State<'_, AppState>) -> Result<SystemInfo, String> {
-    Ok(state.sys_info.clone())
+    let (w, h) = get_screen_resolution();
+    let mut info = state.sys_info.clone();
+    info.screen_width = w;
+    info.screen_height = h;
+    Ok(info)
 }
 
 #[tauri::command]
@@ -79,39 +103,55 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
     state.discovery.set_is_host(true).await;
 
     // Start TCP server
-    let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<NetworkMessage>();
+    let (incoming_tx, mut incoming_rx) = mpsc::unbounded_channel::<NetworkMessage>();
     let (status_tx, _status_rx) = mpsc::unbounded_channel::<String>();
+
+    let (screen_w, screen_h) = get_screen_resolution();
 
     let mut server = NetworkServer::new(
         state.pin_manager.clone(),
         state.sys_info.device_name.clone(),
         state.sys_info.os.clone(),
-        state.sys_info.screen_width,
-        state.sys_info.screen_height,
+        screen_w,
+        screen_h,
     );
 
-    server.start(msg_tx.clone(), status_tx).await.map_err(|e| e.to_string())?;
+    server.start(incoming_tx, status_tx).await.map_err(|e| e.to_string())?;
+
+    let outbound_tx = server
+        .get_outbound_sender()
+        .ok_or_else(|| "Failed to obtain server outbound channel".to_string())?;
+
     *state.server.write().await = Some(server);
 
-    // Start Real Windows Low-Level Mouse & Keyboard Hooks
+    // Start Real Windows Low-Level Mouse & Keyboard Hooks hooked to outbound network channel
     let (ui_tx, mut _ui_rx) = mpsc::unbounded_channel::<String>();
     let (switch_back_tx, mut switch_back_rx) = mpsc::unbounded_channel::<()>();
 
-    state.edge_monitor.start_monitor(msg_tx.clone(), ui_tx);
-    state.keyboard_hook.start_hook(msg_tx.clone(), switch_back_tx);
-    state.clipboard_watcher.start(msg_tx.clone());
+    state.edge_monitor.start_monitor(outbound_tx.clone(), ui_tx);
+    state.keyboard_hook.start_hook(outbound_tx.clone(), switch_back_tx);
+    state.clipboard_watcher.start(outbound_tx.clone());
 
-    // Emergency recall listener
+    // Emergency recall listener (Ctrl+Alt+Shift+Esc or Pause key)
     let edge_mon_clone = state.edge_monitor.clone();
     let kb_hook_clone = state.keyboard_hook.clone();
+    let server_ref = state.server.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(()) = switch_back_rx.recv().await {
             edge_mon_clone.set_active_screen(ActiveScreen::Host).await;
             kb_hook_clone.update_active_screen(ActiveScreen::Host);
+
+            let msg = NetworkMessage::SwitchScreen(SwitchScreenPayload {
+                active_device: "host".to_string(),
+                entry_y_ratio: 0.5,
+            });
+            if let Some(srv) = server_ref.read().await.as_ref() {
+                let _ = srv.send_message(msg);
+            }
         }
     });
 
-    // Start background event handler for incoming server messages
+    // Start background event handler for incoming messages received FROM the client
     let clip_watcher = state.clipboard_watcher.clone();
     let edge_mon = state.edge_monitor.clone();
     let kb_hook = state.keyboard_hook.clone();
@@ -120,7 +160,7 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
     let transfers = state.active_transfers.clone();
 
     tauri::async_runtime::spawn(async move {
-        while let Some(msg) = msg_rx.recv().await {
+        while let Some(msg) = incoming_rx.recv().await {
             match msg {
                 NetworkMessage::ClipboardSync(p) => {
                     clip_watcher.apply_incoming_text(&p.text, p.hash).await;
@@ -133,6 +173,11 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
                     };
                     edge_mon.set_active_screen(target).await;
                     kb_hook.update_active_screen(target);
+
+                    if p.active_device == "host" {
+                        let target_y = (p.entry_y_ratio * screen_h as f32) as i32;
+                        m_sim.move_absolute((screen_w as i32) - 30, target_y);
+                    }
                 }
                 NetworkMessage::MouseMove(p) => {
                     m_sim.move_relative(p.dx, p.dy);
@@ -181,12 +226,14 @@ async fn join_connection(
     let (incoming_tx, mut incoming_rx) = mpsc::unbounded_channel::<NetworkMessage>();
     let (status_tx, _status_rx) = mpsc::unbounded_channel::<String>();
 
+    let (screen_w, screen_h) = get_screen_resolution();
+
     let mut client = NetworkClient::new(
         format!("dev_{}", rand::random::<u32>()),
         state.sys_info.device_name.clone(),
         state.sys_info.os.clone(),
-        state.sys_info.screen_width,
-        state.sys_info.screen_height,
+        screen_w,
+        screen_h,
     );
 
     let token = client
@@ -194,9 +241,40 @@ async fn join_connection(
         .await
         .map_err(|e| e.to_string())?;
 
+    let outbound_tx = client
+        .get_outbound_sender()
+        .ok_or_else(|| "Failed to obtain client outbound channel".to_string())?;
+
     *state.client.write().await = Some(client);
 
-    // Start background event handler for incoming client messages
+    // Start Low-Level Mouse & Keyboard Hooks with client's outbound channel
+    let (ui_tx, mut _ui_rx) = mpsc::unbounded_channel::<String>();
+    let (switch_back_tx, mut switch_back_rx) = mpsc::unbounded_channel::<()>();
+
+    state.edge_monitor.start_monitor(outbound_tx.clone(), ui_tx);
+    state.keyboard_hook.start_hook(outbound_tx.clone(), switch_back_tx);
+    state.clipboard_watcher.start(outbound_tx.clone());
+
+    // Emergency recall listener
+    let edge_mon_clone = state.edge_monitor.clone();
+    let kb_hook_clone = state.keyboard_hook.clone();
+    let client_ref = state.client.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(()) = switch_back_rx.recv().await {
+            edge_mon_clone.set_active_screen(ActiveScreen::Host).await;
+            kb_hook_clone.update_active_screen(ActiveScreen::Host);
+
+            let msg = NetworkMessage::SwitchScreen(SwitchScreenPayload {
+                active_device: "client".to_string(),
+                entry_y_ratio: 0.5,
+            });
+            if let Some(cl) = client_ref.read().await.as_ref() {
+                let _ = cl.send_message(msg);
+            }
+        }
+    });
+
+    // Start background event handler for incoming client messages from host
     let clip_watcher = state.clipboard_watcher.clone();
     let m_sim = state.mouse_sim.clone();
     let k_sim = state.keyboard_sim.clone();
@@ -230,6 +308,11 @@ async fn join_connection(
                     };
                     edge_mon.set_active_screen(target).await;
                     kb_hook.update_active_screen(target);
+
+                    if p.active_device == "client" {
+                        let target_y = (p.entry_y_ratio * screen_h as f32) as i32;
+                        m_sim.move_absolute(2, target_y);
+                    }
                 }
                 NetworkMessage::FileTransferInit(init) => {
                     let download_dir = dirs_fallback().join("AirDesk");
@@ -251,6 +334,38 @@ async fn join_connection(
     });
 
     Ok(token)
+}
+
+#[tauri::command]
+async fn toggle_active_screen(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let current = state.edge_monitor.get_active_screen().await;
+    let next = match current {
+        ActiveScreen::Host => ActiveScreen::Client,
+        ActiveScreen::Client => ActiveScreen::Host,
+    };
+
+    state.edge_monitor.set_active_screen(next).await;
+    state.keyboard_hook.update_active_screen(next);
+
+    let msg = NetworkMessage::SwitchScreen(SwitchScreenPayload {
+        active_device: match next {
+            ActiveScreen::Host => "host".to_string(),
+            ActiveScreen::Client => "client".to_string(),
+        },
+        entry_y_ratio: 0.5,
+    });
+
+    if let Some(srv) = state.server.read().await.as_ref() {
+        let _ = srv.send_message(msg.clone());
+    }
+    if let Some(cl) = state.client.read().await.as_ref() {
+        let _ = cl.send_message(msg);
+    }
+
+    Ok(match next {
+        ActiveScreen::Host => "host".to_string(),
+        ActiveScreen::Client => "client".to_string(),
+    })
 }
 
 #[tauri::command]
@@ -347,12 +462,15 @@ fn main() {
         .map(|ip| ip.to_string())
         .unwrap_or_else(|_| "127.0.0.1".to_string());
 
+    let (screen_w, screen_h) = get_screen_resolution();
+    log::info!("AirDesk initialized for resolution {}x{}", screen_w, screen_h);
+
     let sys_info = SystemInfo {
         device_name: hostname.clone(),
         os: os_name.clone(),
         local_ip,
-        screen_width: 1920,
-        screen_height: 1080,
+        screen_width: screen_w,
+        screen_height: screen_h,
     };
 
     let pin_mgr = create_shared_pin_manager();
@@ -364,10 +482,10 @@ fn main() {
     ));
 
     let active_screen = Arc::new(tokio::sync::RwLock::new(ActiveScreen::Host));
-    let edge_mon = Arc::new(MouseEdgeMonitor::new(1920, 1080));
+    let edge_mon = Arc::new(MouseEdgeMonitor::new(screen_w, screen_h));
     let keyboard_hook = Arc::new(KeyboardHookManager::new(active_screen));
     let clip_watcher = Arc::new(ClipboardWatcher::new());
-    let mouse_sim = Arc::new(MouseSimulator::new(1920, 1080));
+    let mouse_sim = Arc::new(MouseSimulator::new(screen_w, screen_h));
     let keyboard_sim = Arc::new(KeyboardSimulator::new());
 
     let disc_clone = discovery.clone();
@@ -401,7 +519,8 @@ fn main() {
             get_discovered_devices,
             disconnect_all,
             set_screen_arrangement,
-            get_connection_status
+            get_connection_status,
+            toggle_active_screen
         ])
         .run(tauri::generate_context!())
         .expect("error while running AirDesk application");

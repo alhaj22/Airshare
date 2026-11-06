@@ -112,11 +112,20 @@ export function useAirDesk() {
     showNotification('Screen layout updated', 'info');
   };
 
-  // Simulate cursor switch (for testing & interactive demo)
-  const toggleActiveScreen = () => {
-    const next = status.active_screen === 'host' ? 'client' : 'host';
-    api.simulateScreenSwitch(next);
-    setStatus((prev) => ({ ...prev, active_screen: next }));
+  // Cursor switch (switches control to remote computer or back to local computer)
+  const toggleActiveScreen = async () => {
+    try {
+      const next = await api.toggleActiveScreen();
+      setStatus((prev) => ({ ...prev, active_screen: next }));
+      showNotification(
+        next === 'client'
+          ? 'Switched control to remote device! Move mouse or type.'
+          : 'Returned control to this laptop.',
+        'info'
+      );
+    } catch (err: unknown) {
+      console.error('Failed to toggle screen:', err);
+    }
   };
 
   // Simulate remote connection (for web preview)
