@@ -26,9 +26,44 @@ lazy_static::lazy_static! {
     static ref CURRENT_ARRANGEMENT: std::sync::RwLock<ScreenArrangement> = std::sync::RwLock::new(ScreenArrangement::HostLeftClientRight);
     static ref CURRENT_ACTIVE_SCREEN: std::sync::RwLock<ActiveScreen> = std::sync::RwLock::new(ActiveScreen::Host);
     static ref SCREEN_DIMENSIONS: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((1366, 768));
+    static ref REMOTE_SCREEN_SIZE: std::sync::RwLock<(f32, f32)> = std::sync::RwLock::new((1440.0, 900.0));
     static ref LAST_CURSOR: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((0, 0));
     static ref VERTICAL_OFFSET_RATIO: std::sync::RwLock<f32> = std::sync::RwLock::new(0.0);
     static ref VIRTUAL_REMOTE_POS: std::sync::RwLock<(f32, f32)> = std::sync::RwLock::new((0.0, 0.5));
+    static ref LAST_SWITCH_TIME: std::sync::RwLock<Option<std::time::Instant>> = std::sync::RwLock::new(None);
+}
+
+pub fn get_current_active_screen() -> ActiveScreen {
+    #[cfg(windows)]
+    {
+        CURRENT_ACTIVE_SCREEN.read().map(|s| *s).unwrap_or(ActiveScreen::Host)
+    }
+    #[cfg(not(windows))]
+    {
+        ActiveScreen::Host
+    }
+}
+
+pub fn set_current_active_screen(screen: ActiveScreen) {
+    #[cfg(windows)]
+    {
+        if let Ok(mut s) = CURRENT_ACTIVE_SCREEN.write() {
+            *s = screen;
+        }
+        if let Ok(mut t) = LAST_SWITCH_TIME.write() {
+            *t = Some(std::time::Instant::now());
+        }
+    }
+    crate::keyboard::set_keyboard_active_screen(screen);
+}
+
+pub fn set_remote_screen_size(width: u32, height: u32) {
+    #[cfg(windows)]
+    {
+        if let Ok(mut rem) = REMOTE_SCREEN_SIZE.write() {
+            *rem = (width.max(800) as f32, height.max(600) as f32);
+        }
+    }
 }
 
 pub struct MouseEdgeMonitor {
@@ -77,30 +112,24 @@ impl MouseEdgeMonitor {
     }
 
     pub async fn get_active_screen(&self) -> ActiveScreen {
-        *self.active_screen.read().await
+        get_current_active_screen()
     }
 
     pub async fn set_active_screen(&self, screen: ActiveScreen) {
         *self.active_screen.write().await = screen;
+        set_current_active_screen(screen);
+
         #[cfg(windows)]
         {
-            if let Ok(mut scr) = CURRENT_ACTIVE_SCREEN.write() {
-                *scr = screen;
-            }
-            crate::keyboard::set_keyboard_active_screen(screen);
-
-            if screen == ActiveScreen::Host {
-                unsafe {
+            let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1366, 768));
+            let center_x = screen_w / 2;
+            let center_y = screen_h / 2;
+            unsafe {
+                if screen == ActiveScreen::Host {
                     windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor(std::ptr::null());
-                    let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1366, 768));
-                    // Place cursor back within host screen bounds safely
-                    windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos(screen_w - 30, screen_h / 2);
-                }
-            } else {
-                let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1366, 768));
-                let center_x = screen_w / 2;
-                let center_y = screen_h / 2;
-                unsafe {
+                    // Center cursor safely on host screen away from edge
+                    windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos(center_x, center_y);
+                } else {
                     windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos(center_x, center_y);
                 }
             }
@@ -150,8 +179,19 @@ impl MouseEdgeMonitor {
                         let active_screen = CURRENT_ACTIVE_SCREEN.read().map(|s| *s).unwrap_or(ActiveScreen::Host);
                         let arrangement = CURRENT_ARRANGEMENT.read().map(|a| *a).unwrap_or(ScreenArrangement::HostLeftClientRight);
                         let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1366, 768));
+                        let (rem_w, rem_h) = REMOTE_SCREEN_SIZE.read().map(|d| *d).unwrap_or((1440.0, 900.0));
+
+                        let in_cooldown = if let Ok(t_guard) = LAST_SWITCH_TIME.read() {
+                            t_guard.map(|t| t.elapsed().as_millis() < 400).unwrap_or(false)
+                        } else {
+                            false
+                        };
 
                         if active_screen == ActiveScreen::Host {
+                            if in_cooldown {
+                                return CallNextHookEx(0, n_code, w_param, l_param);
+                            }
+
                             // Boundary detection to cross over to remote device
                             let crossed = match arrangement {
                                 ScreenArrangement::HostLeftClientRight => x >= screen_w - 2,
@@ -163,16 +203,27 @@ impl MouseEdgeMonitor {
                             if crossed {
                                 let offset = VERTICAL_OFFSET_RATIO.read().map(|o| *o).unwrap_or(0.0);
                                 let y_ratio = ((y as f32 / screen_h as f32) - offset).clamp(0.0, 1.0);
+                                let x_ratio = (x as f32 / screen_w as f32).clamp(0.0, 1.0);
 
-                                if let Ok(mut s) = CURRENT_ACTIVE_SCREEN.write() {
-                                    *s = ActiveScreen::Client;
-                                }
-                                crate::keyboard::set_keyboard_active_screen(ActiveScreen::Client);
-
-                                // Initialize virtual remote cursor position
+                                // Initialize virtual remote cursor position properly based on arrangement
                                 if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
-                                    *rpos = (15.0, y as f32);
+                                    match arrangement {
+                                        ScreenArrangement::HostLeftClientRight => {
+                                            *rpos = (10.0, y_ratio * rem_h);
+                                        }
+                                        ScreenArrangement::HostRightClientLeft => {
+                                            *rpos = (rem_w - 10.0, y_ratio * rem_h);
+                                        }
+                                        ScreenArrangement::HostTopClientBottom => {
+                                            *rpos = (x_ratio * rem_w, 10.0);
+                                        }
+                                        ScreenArrangement::HostBottomClientTop => {
+                                            *rpos = (x_ratio * rem_w, rem_h - 10.0);
+                                        }
+                                    }
                                 }
+
+                                set_current_active_screen(ActiveScreen::Client);
 
                                 let center_x = screen_w / 2;
                                 let center_y = screen_h / 2;
@@ -203,8 +254,10 @@ impl MouseEdgeMonitor {
                             let center_x = screen_w / 2;
                             let center_y = screen_h / 2;
 
+                            let mut has_sender = false;
                             if let Ok(tx_guard) = MOUSE_HOOK_TX.lock() {
                                 if let Some(tx) = &*tx_guard {
+                                    has_sender = true;
                                     match w_param as u32 {
                                         WM_MOUSEMOVE => {
                                             let dx = x - center_x;
@@ -213,47 +266,70 @@ impl MouseEdgeMonitor {
                                             if dx != 0 || dy != 0 {
                                                 let mut should_switch_back = false;
                                                 let mut return_y_ratio = 0.5f32;
+                                                let mut return_x_ratio = 0.5f32;
 
-                                                // Update virtual cursor position on remote screen
-                                                if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
-                                                    rpos.0 += dx as f32;
-                                                    rpos.1 = (rpos.1 + dy as f32).clamp(0.0, screen_h as f32);
-                                                    return_y_ratio = (rpos.1 / screen_h as f32).clamp(0.0, 1.0);
+                                                if !in_cooldown {
+                                                    // Update virtual cursor position on remote screen with proper clamping!
+                                                    if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
+                                                        let next_x = rpos.0 + dx as f32;
+                                                        let next_y = rpos.1 + dy as f32;
 
-                                                    match arrangement {
-                                                        ScreenArrangement::HostLeftClientRight => {
-                                                            // Crossing back from Mac left edge into Windows right edge
-                                                            if rpos.0 <= 0.0 && dx < 0 {
-                                                                should_switch_back = true;
+                                                        match arrangement {
+                                                            ScreenArrangement::HostLeftClientRight => {
+                                                                // Crossing back from Mac left edge into Windows right edge
+                                                                if next_x <= 0.0 && dx < 0 {
+                                                                    should_switch_back = true;
+                                                                }
+                                                            }
+                                                            ScreenArrangement::HostRightClientLeft => {
+                                                                // Crossing back from Mac right edge into Windows left edge
+                                                                if next_x >= rem_w && dx > 0 {
+                                                                    should_switch_back = true;
+                                                                }
+                                                            }
+                                                            ScreenArrangement::HostTopClientBottom => {
+                                                                // Crossing back from Mac top edge into Windows bottom edge
+                                                                if next_y <= 0.0 && dy < 0 {
+                                                                    should_switch_back = true;
+                                                                }
+                                                            }
+                                                            ScreenArrangement::HostBottomClientTop => {
+                                                                // Crossing back from Mac bottom edge into Windows top edge
+                                                                if next_y >= rem_h && dy > 0 {
+                                                                    should_switch_back = true;
+                                                                }
                                                             }
                                                         }
-                                                        ScreenArrangement::HostRightClientLeft => {
-                                                            // Crossing back from Mac right edge into Windows left edge
-                                                            if rpos.0 >= 1440.0 && dx > 0 {
-                                                                should_switch_back = true;
-                                                            }
-                                                        }
-                                                        _ => {}
+
+                                                        // Clamp virtual remote pos so it never balloons off-screen
+                                                        rpos.0 = next_x.clamp(0.0, rem_w);
+                                                        rpos.1 = next_y.clamp(0.0, rem_h);
+                                                        return_y_ratio = (rpos.1 / rem_h).clamp(0.0, 1.0);
+                                                        return_x_ratio = (rpos.0 / rem_w).clamp(0.0, 1.0);
                                                     }
                                                 }
 
                                                 if should_switch_back {
                                                     // Return cursor and keyboard control to Host!
-                                                    if let Ok(mut s) = CURRENT_ACTIVE_SCREEN.write() {
-                                                        *s = ActiveScreen::Host;
-                                                    }
-                                                    crate::keyboard::set_keyboard_active_screen(ActiveScreen::Host);
+                                                    set_current_active_screen(ActiveScreen::Host);
 
                                                     let return_y = (return_y_ratio * screen_h as f32) as i32;
+                                                    let return_x = (return_x_ratio * screen_w as f32) as i32;
+
                                                     match arrangement {
                                                         ScreenArrangement::HostLeftClientRight => {
-                                                            SetCursorPos(screen_w - 25, return_y);
+                                                            // Place comfortably inside Windows screen (60px from right edge)
+                                                            SetCursorPos(screen_w - 60, return_y);
                                                         }
                                                         ScreenArrangement::HostRightClientLeft => {
-                                                            SetCursorPos(25, return_y);
+                                                            // Place comfortably inside Windows screen (60px from left edge)
+                                                            SetCursorPos(60, return_y);
                                                         }
-                                                        _ => {
-                                                            SetCursorPos(center_x, center_y);
+                                                        ScreenArrangement::HostTopClientBottom => {
+                                                            SetCursorPos(return_x, screen_h - 60);
+                                                        }
+                                                        ScreenArrangement::HostBottomClientTop => {
+                                                            SetCursorPos(return_x, 60);
                                                         }
                                                     }
 
@@ -314,6 +390,12 @@ impl MouseEdgeMonitor {
                                     }
                                 }
                             }
+
+                            if !has_sender {
+                                set_current_active_screen(ActiveScreen::Host);
+                                return CallNextHookEx(0, n_code, w_param, l_param);
+                            }
+
                             return 1;
                         }
                     }

@@ -389,6 +389,9 @@ async fn disconnect_all(state: tauri::State<'_, AppState>) -> Result<(), String>
         c.disconnect().await;
     }
 
+    state.edge_monitor.set_active_screen(ActiveScreen::Host).await;
+    state.keyboard_hook.update_active_screen(ActiveScreen::Host);
+
     Ok(())
 }
 

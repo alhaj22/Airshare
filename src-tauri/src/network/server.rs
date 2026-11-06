@@ -189,6 +189,8 @@ impl NetworkServer {
                     });
                 }
 
+                crate::mouse::set_remote_screen_size(pair_request.screen_width, pair_request.screen_height);
+
                 // Send success response
                 let response = NetworkMessage::PairResponse(PairResponsePayload {
                     success: true,

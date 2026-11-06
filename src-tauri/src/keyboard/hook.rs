@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use log::info;
 
-use crate::mouse::ActiveScreen;
+use crate::mouse::{get_current_active_screen, set_current_active_screen, ActiveScreen};
 use crate::network::protocol::{KeyEventPayload, NetworkMessage};
 
 #[cfg(windows)]
@@ -118,15 +118,14 @@ impl KeyboardHookManager {
                         let is_down = msg_type == WM_KEYDOWN || msg_type == WM_SYSKEYDOWN;
                         let is_up = msg_type == WM_KEYUP || msg_type == WM_SYSKEYUP;
 
-                        // Emergency escape shortcut: Ctrl + Alt + Shift + Escape OR Pause key
+                        // Emergency escape shortcut: Ctrl + Alt + Shift + Escape OR Ctrl + Alt + Escape OR Pause key
                         if (vk_code == VK_ESCAPE as u32 && is_down) || (vk_code == 0x13 && is_down) {
                             let ctrl = (GetAsyncKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0;
                             let alt = (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0;
-                            let shift = (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0;
 
-                            if (ctrl && alt && shift) || vk_code == 0x13 {
+                            if (ctrl && alt) || vk_code == 0x13 {
                                 info!("Emergency recall activated! Returning control to Host.");
-                                set_keyboard_active_screen(ActiveScreen::Host);
+                                set_current_active_screen(ActiveScreen::Host);
                                 if let Ok(sw_guard) = SWITCH_BACK_TX.lock() {
                                     if let Some(sw_tx) = &*sw_guard {
                                         let _ = sw_tx.send(());
@@ -136,36 +135,45 @@ impl KeyboardHookManager {
                             }
                         }
 
-                        let active = KB_ACTIVE_SCREEN.read().map(|s| *s).unwrap_or(ActiveScreen::Host);
+                        let active = get_current_active_screen();
 
-                        // If remote client is active: intercept all keystrokes and send them over network
+                        // If remote client is active: intercept keystrokes and send them over network
                         if active == ActiveScreen::Client && (is_down || is_up) {
-                            let mut modifiers: u8 = 0;
-                            let shift_pressed = (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0;
-                            if shift_pressed {
-                                modifiers |= 1;
-                            }
-                            if (GetAsyncKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0 {
-                                modifiers |= 2;
-                            }
-                            if (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0 {
-                                modifiers |= 4;
-                            }
-
-                            let ch = if is_down { vk_to_char(vk_code, shift_pressed) } else { None };
+                            let mut sent = false;
 
                             if let Ok(tx_guard) = KB_HOOK_TX.lock() {
                                 if let Some(tx) = &*tx_guard {
-                                    let _ = tx.send(NetworkMessage::KeyEvent(KeyEventPayload {
+                                    let mut modifiers: u8 = 0;
+                                    let shift_pressed = (GetAsyncKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0;
+                                    if shift_pressed {
+                                        modifiers |= 1;
+                                    }
+                                    if (GetAsyncKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0 {
+                                        modifiers |= 2;
+                                    }
+                                    if (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0 {
+                                        modifiers |= 4;
+                                    }
+
+                                    let ch = if is_down { vk_to_char(vk_code, shift_pressed) } else { None };
+
+                                    if tx.send(NetworkMessage::KeyEvent(KeyEventPayload {
                                         key_code: vk_code,
                                         key_char: ch,
                                         state: if is_down { 1 } else { 0 },
                                         modifiers,
-                                    }));
+                                    })).is_ok() {
+                                        sent = true;
+                                    }
                                 }
                             }
 
-                            return 1; // Block event from typing locally on host!
+                            if sent {
+                                return 1; // Block event from typing locally on host ONLY when transmitted
+                            } else {
+                                // Channel closed / disconnected: immediately restore typing locally on Windows!
+                                set_current_active_screen(ActiveScreen::Host);
+                            }
                         }
                     }
 
