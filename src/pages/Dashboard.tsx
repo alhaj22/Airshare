@@ -85,6 +85,7 @@ export const Dashboard: React.FC = () => {
         {/* Interactive Screen Arrangement & Visualizer */}
         <ScreenArrangement
           status={status}
+          systemInfo={systemInfo}
           arrangement={screenArrangement}
           onArrangementChange={updateArrangement}
           onSimulateEdgeCross={toggleActiveScreen}

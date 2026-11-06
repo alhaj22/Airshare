@@ -131,12 +131,15 @@ export const api = {
     return mockState.discoveredDevices;
   },
 
-  async setScreenArrangement(arrangement: ScreenArrangementType): Promise<void> {
+  async setScreenArrangement(arrangement: ScreenArrangementType, verticalOffset?: number): Promise<void> {
     mockState.arrangement = arrangement;
     if (isTauri) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('set_screen_arrangement', { arrangement });
+        await invoke('set_screen_arrangement', {
+          arrangement,
+          verticalOffset: verticalOffset !== undefined ? verticalOffset : null,
+        });
       } catch (err) {
         console.warn('Failed to set screen arrangement', err);
       }

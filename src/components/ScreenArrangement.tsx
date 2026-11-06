@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Monitor,
   Laptop,
@@ -6,180 +6,333 @@ import {
   MousePointer2,
   Sliders,
   CheckCircle2,
+  MoveVertical,
+  RotateCcw,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyStart,
 } from 'lucide-react';
-import type { ConnectionStatus, ScreenArrangementType } from '../types';
+import type { ConnectionStatus, ScreenArrangementType, SystemInfo } from '../types';
 
 interface ScreenArrangementProps {
   status: ConnectionStatus;
+  systemInfo: SystemInfo | null;
   arrangement: ScreenArrangementType;
-  onArrangementChange: (arr: ScreenArrangementType) => void;
+  onArrangementChange: (arr: ScreenArrangementType, verticalOffset?: number) => void;
   onSimulateEdgeCross: () => void;
 }
 
 export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
   status,
+  systemInfo,
   arrangement,
   onArrangementChange,
   onSimulateEdgeCross,
 }) => {
-  const isClientScreen = status.active_screen === 'client';
+  const isClientActive = status.active_screen === 'client';
+  const isConnected = status.mode === 'connected';
 
-  const isHostLeft =
-    arrangement === 'host_left_client_right' ||
-    arrangement === 'host_top_client_bottom';
+  // Arrangement side: is Host on the Left?
+  const isHostLeft = arrangement === 'host_left_client_right' || arrangement === 'host_top_client_bottom';
+
+  // Vertical offset for Display B (-100px to +100px, default +38px matching ShareMouse screenshot)
+  const [verticalOffset, setVerticalOffset] = useState<number>(38);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const dragStartY = useRef<number>(0);
+  const dragStartOffset = useRef<number>(38);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Host and Client display names from actual system state
+  const hostName = systemInfo?.device_name || 'DESKTOP-H6EVCSJ';
+  const clientName = status.peer_device || "Alhaj's MacBook Air";
+
+  // Mouse drag handlers to adjust vertical display shift in real-time
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    dragStartY.current = e.clientY;
+    dragStartOffset.current = verticalOffset;
+  };
+
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isDragging) return;
+      const deltaY = e.clientY - dragStartY.current;
+      const newOffset = Math.max(-70, Math.min(70, dragStartOffset.current + deltaY));
+      setVerticalOffset(newOffset);
+      // Normalized offset ratio (-0.5 to +0.5)
+      const ratio = newOffset / 140;
+      onArrangementChange(arrangement, ratio);
+    },
+    [isDragging, arrangement, onArrangementChange]
+  );
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, handleMouseMove, handleMouseUp]);
+
+  // Quick alignment helpers
+  const alignTops = () => {
+    setVerticalOffset(0);
+    onArrangementChange(arrangement, 0);
+  };
+
+  const alignCenters = () => {
+    setVerticalOffset(15);
+    onArrangementChange(arrangement, 15 / 140);
+  };
+
+  const resetToShareMouseDefault = () => {
+    setVerticalOffset(38);
+    onArrangementChange('host_left_client_right', 38 / 140);
+  };
+
+  const swapSides = () => {
+    const nextArr = isHostLeft ? 'host_right_client_left' : 'host_left_client_right';
+    onArrangementChange(nextArr, verticalOffset / 140);
+  };
 
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 shadow-xl backdrop-blur-md">
+      {/* Header bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-white/10">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <Sliders className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-white">
-              Screen Arrangement & Edge Crossing
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-white">
+                Display Arrangement & Edge Alignment
+              </h2>
+              {isConnected ? (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Auto-Connected & Synced
+                </span>
+              ) : (
+                <span className="rounded-full bg-slate-800 border border-white/10 px-2 py-0.5 text-[10px] font-medium text-slate-400">
+                  Drag screens to align
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-400">
-              Move your mouse to the screen edge to automatically transfer control
+              Drag Display B up or down to match your desk height. Move cursor across the touching edge.
             </p>
           </div>
         </div>
 
-        {/* Arrangement Mode Selector */}
-        <div className="flex items-center gap-1.5 rounded-xl bg-slate-950/60 p-1 border border-white/10">
+        {/* Action Controls */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => onArrangementChange('host_left_client_right')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-              arrangement === 'host_left_client_right'
-                ? 'bg-cyan-500 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
+            onClick={swapSides}
+            title="Swap Left / Right position"
+            className="flex items-center gap-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 border border-white/10 transition cursor-pointer"
           >
-            Windows (Left) • Mac (Right)
+            <ArrowLeftRight className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Swap Sides</span>
           </button>
 
           <button
-            onClick={() => onArrangementChange('host_right_client_left')}
-            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-              arrangement === 'host_right_client_left'
-                ? 'bg-cyan-500 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
+            onClick={alignTops}
+            title="Align top edges"
+            className="flex items-center gap-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 border border-white/10 transition cursor-pointer"
           >
-            Mac (Left) • Windows (Right)
+            <AlignVerticalJustifyStart className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Top</span>
+          </button>
+
+          <button
+            onClick={alignCenters}
+            title="Align vertical centers"
+            className="flex items-center gap-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 border border-white/10 transition cursor-pointer"
+          >
+            <AlignVerticalJustifyCenter className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Center</span>
+          </button>
+
+          <button
+            onClick={resetToShareMouseDefault}
+            title="Reset to ShareMouse layout"
+            className="flex items-center gap-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 border border-white/10 transition cursor-pointer"
+          >
+            <RotateCcw className="h-3.5 w-3.5 text-amber-400" />
+            <span>Default</span>
           </button>
         </div>
       </div>
 
-      {/* Visual Canvas of Two Screens */}
-      <div className="relative mt-6 flex min-h-[260px] items-center justify-center rounded-xl border border-white/5 bg-slate-950/80 p-6 overflow-hidden">
-        {/* Subtle grid background */}
+      {/* ShareMouse-style Interactive Canvas */}
+      <div
+        ref={containerRef}
+        className="relative mt-6 flex min-h-[320px] items-center justify-center rounded-xl border border-white/10 bg-[#eef1f6] dark:bg-slate-950 p-8 overflow-hidden select-none"
+      >
+        {/* Subtle grid pattern */}
         <div
-          className="absolute inset-0 opacity-15"
+          className="absolute inset-0 opacity-20 pointer-events-none"
           style={{
             backgroundImage:
-              'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.2) 1px, transparent 0)',
-            backgroundSize: '20px 20px',
+              'radial-gradient(circle at 1px 1px, rgba(0,0,0,0.3) 1px, transparent 0)',
+            backgroundSize: '24px 24px',
           }}
         />
 
-        <div className="relative z-10 flex flex-wrap items-center justify-center gap-4 sm:gap-6">
-          {/* First Screen */}
+        {/* Display Arrangement Area */}
+        <div className="relative z-10 flex items-start justify-center transition-all duration-75">
+          {/* Card A (Host Display - Slate Blue) */}
           <div
-            className={`relative flex flex-col items-center justify-center w-56 sm:w-64 h-36 sm:h-40 rounded-xl border-2 transition-all duration-300 ${
-              (!isClientScreen && isHostLeft) || (isClientScreen && !isHostLeft)
-                ? 'border-cyan-400 bg-cyan-950/30 shadow-lg shadow-cyan-500/20 ring-4 ring-cyan-500/10'
-                : 'border-slate-800 bg-slate-900/60 opacity-70'
+            style={{ order: isHostLeft ? 1 : 2 }}
+            className={`relative flex flex-col items-center justify-between w-64 sm:w-72 h-44 rounded-md shadow-xl transition-shadow ${
+              !isClientActive
+                ? 'ring-4 ring-cyan-400/80 shadow-cyan-500/30'
+                : 'opacity-95'
             }`}
           >
-            {isHostLeft ? (
-              <>
-                <Monitor className="h-8 w-8 text-blue-400 mb-1" />
-                <span className="text-sm font-bold text-white">Windows PC</span>
-                <span className="text-[11px] font-mono text-slate-400">1920 × 1080 • Host</span>
-              </>
-            ) : (
-              <>
-                <Laptop className="h-8 w-8 text-purple-400 mb-1" />
-                <span className="text-sm font-bold text-white">MacBook Air M1</span>
-                <span className="text-[11px] font-mono text-slate-400">2560 × 1600 • Client</span>
-              </>
-            )}
-
-            {/* Active cursor badge */}
-            {((!isClientScreen && isHostLeft) || (isClientScreen && !isHostLeft)) && (
-              <div className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 border border-cyan-500/40">
-                <MousePointer2 className="h-2.5 w-2.5" />
-                <span>Active Cursor</span>
+            {/* Display Body */}
+            <div
+              className="relative w-full h-full rounded-md flex flex-col items-center justify-between p-3 border"
+              style={{
+                backgroundColor: '#6882c4',
+                borderColor: '#3b528a',
+              }}
+            >
+              {/* Top Bar / Resolution tag */}
+              <div className="w-full flex items-center justify-between text-[11px] font-mono text-white/80">
+                <span className="flex items-center gap-1">
+                  <Monitor className="h-3 w-3" />
+                  {systemInfo?.os || 'Windows'}
+                </span>
+                <span>
+                  {systemInfo?.screen_width || 1366} × {systemInfo?.screen_height || 768}
+                </span>
               </div>
-            )}
+
+              {/* Center Black Circle Badge: "A" */}
+              <div className="flex flex-col items-center justify-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black shadow-lg">
+                  <span className="text-xl font-black text-white tracking-wider">A</span>
+                </div>
+                {!isClientActive && (
+                  <span className="mt-1 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
+                    <MousePointer2 className="h-2.5 w-2.5" />
+                    Active Cursor
+                  </span>
+                )}
+              </div>
+
+              {/* Bottom Label: Exact Machine Name */}
+              <div className="w-full text-center">
+                <span className="text-xs font-semibold text-white tracking-wide truncate max-w-[200px] inline-block drop-shadow-sm">
+                  {hostName}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* Interactive Edge Barrier Line */}
-          <div className="flex flex-col items-center justify-center py-2">
+          {/* Interactive Boundary Crossing Divider */}
+          <div
+            style={{ order: 1.5 }}
+            className="relative z-20 flex flex-col items-center justify-center self-stretch px-0.5"
+          >
             <button
               onClick={onSimulateEdgeCross}
-              title="Click to simulate moving mouse across edge boundary"
-              className="group flex flex-col items-center gap-1 rounded-xl bg-slate-800 hover:bg-slate-700 p-2 text-slate-300 transition cursor-pointer"
+              title="Click to jump cursor across laptops"
+              className="group flex flex-col items-center gap-1 rounded-full bg-black/40 hover:bg-black/80 px-1 py-3 text-cyan-400 transition cursor-pointer backdrop-blur-sm -mx-3"
             >
-              <div className="flex items-center gap-1">
-                <span className="h-10 w-0.5 bg-gradient-to-b from-transparent via-cyan-400 to-transparent group-hover:scale-y-125 transition" />
-                <ArrowLeftRight className="h-4 w-4 text-cyan-400 group-hover:scale-110 transition" />
-                <span className="h-10 w-0.5 bg-gradient-to-b from-transparent via-cyan-400 to-transparent group-hover:scale-y-125 transition" />
-              </div>
-              <span className="text-[10px] font-medium text-slate-400 group-hover:text-cyan-300">
-                Crossing Edge
+              <ArrowLeftRight className="h-3.5 w-3.5 group-hover:scale-125 transition" />
+              <span className="text-[9px] font-bold uppercase tracking-wider [writing-mode:vertical-lr] text-white/70 group-hover:text-cyan-300">
+                Edge Cross
               </span>
             </button>
           </div>
 
-          {/* Second Screen */}
+          {/* Card B (Client Display - Olive Green / Draggable) */}
           <div
-            className={`relative flex flex-col items-center justify-center w-56 sm:w-64 h-36 sm:h-40 rounded-xl border-2 transition-all duration-300 ${
-              (isClientScreen && isHostLeft) || (!isClientScreen && !isHostLeft)
-                ? 'border-purple-400 bg-purple-950/30 shadow-lg shadow-purple-500/20 ring-4 ring-purple-500/10'
-                : 'border-slate-800 bg-slate-900/60 opacity-70'
+            style={{
+              order: isHostLeft ? 2 : 1,
+              transform: `translateY(${verticalOffset}px)`,
+            }}
+            onMouseDown={handleMouseDown}
+            className={`relative flex flex-col items-center justify-between w-64 sm:w-72 h-44 rounded-md shadow-xl cursor-grab active:cursor-grabbing transition-transform duration-75 ${
+              isClientActive
+                ? 'ring-4 ring-emerald-400/90 shadow-emerald-500/30'
+                : 'opacity-95'
             }`}
           >
-            {isHostLeft ? (
-              <>
-                <Laptop className="h-8 w-8 text-purple-400 mb-1" />
-                <span className="text-sm font-bold text-white">MacBook Air M1</span>
-                <span className="text-[11px] font-mono text-slate-400">2560 × 1600 • Client</span>
-              </>
-            ) : (
-              <>
-                <Monitor className="h-8 w-8 text-blue-400 mb-1" />
-                <span className="text-sm font-bold text-white">Windows PC</span>
-                <span className="text-[11px] font-mono text-slate-400">1920 × 1080 • Host</span>
-              </>
-            )}
-
-            {/* Active cursor badge */}
-            {((isClientScreen && isHostLeft) || (!isClientScreen && !isHostLeft)) && (
-              <div className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold text-purple-300 border border-purple-500/40">
-                <MousePointer2 className="h-2.5 w-2.5" />
-                <span>Active Cursor</span>
+            {/* Display Body */}
+            <div
+              className="relative w-full h-full rounded-md flex flex-col items-center justify-between p-3 border"
+              style={{
+                backgroundColor: '#96aa16',
+                borderColor: '#66750e',
+              }}
+            >
+              {/* Top Bar / Drag Hint & Resolution */}
+              <div className="w-full flex items-center justify-between text-[11px] font-mono text-white/80">
+                <span className="flex items-center gap-1">
+                  <Laptop className="h-3 w-3" />
+                  macOS
+                </span>
+                <span className="flex items-center gap-1 text-[10px] bg-black/30 rounded px-1.5 py-0.5">
+                  <MoveVertical className="h-2.5 w-2.5" />
+                  Drag Vertically
+                </span>
               </div>
-            )}
+
+              {/* Center Black Circle Badge: "B" */}
+              <div className="flex flex-col items-center justify-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black shadow-lg">
+                  <span className="text-xl font-black text-white tracking-wider">B</span>
+                </div>
+                {isClientActive && (
+                  <span className="mt-1 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                    <MousePointer2 className="h-2.5 w-2.5" />
+                    Active Cursor
+                  </span>
+                )}
+              </div>
+
+              {/* Bottom Label: Exact Client Machine Name */}
+              <div className="w-full text-center">
+                <span className="text-xs font-semibold text-white tracking-wide truncate max-w-[200px] inline-block drop-shadow-sm">
+                  {clientName}
+                </span>
+              </div>
+            </div>
+
+            {/* Vertical Offset floating indicator */}
+            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/75 px-2 py-0.5 text-[10px] font-mono text-white/90 shadow-md">
+              Offset: {verticalOffset > 0 ? `+${verticalOffset}px (Lower)` : verticalOffset < 0 ? `${verticalOffset}px (Higher)` : '0px (Aligned)'}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Guide & Instructions */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+      {/* Guide footer */}
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 text-emerald-400" />
           <span>
-            {arrangement === 'host_left_client_right'
-              ? 'Move mouse to Windows right edge to seamlessly control MacBook.'
-              : 'Move mouse to Windows left edge to seamlessly control MacBook.'}
+            {isHostLeft
+              ? `Move mouse off the Right edge of ${hostName} to enter ${clientName}.`
+              : `Move mouse off the Left edge of ${hostName} to enter ${clientName}.`}
           </span>
         </div>
 
-        <span className="rounded-md bg-slate-800 px-2 py-1 text-[11px] font-mono text-slate-300">
-          Emergency Release: Ctrl + Alt + Shift + Esc
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="rounded-md bg-slate-800 px-2.5 py-1 text-[11px] font-mono text-cyan-300 border border-white/10">
+            Emergency Recall: Ctrl + Alt + Shift + Esc or Pause key
+          </span>
+        </div>
       </div>
     </div>
   );

@@ -395,6 +395,7 @@ async fn disconnect_all(state: tauri::State<'_, AppState>) -> Result<(), String>
 #[tauri::command]
 async fn set_screen_arrangement(
     arrangement: String,
+    vertical_offset: Option<f32>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let arr = match arrangement.as_str() {
@@ -405,6 +406,9 @@ async fn set_screen_arrangement(
         _ => return Err("Invalid arrangement option".to_string()),
     };
     state.edge_monitor.set_arrangement(arr).await;
+    if let Some(off) = vertical_offset {
+        state.edge_monitor.set_vertical_offset(off).await;
+    }
     Ok(())
 }
 

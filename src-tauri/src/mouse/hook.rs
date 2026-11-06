@@ -27,6 +27,7 @@ lazy_static::lazy_static! {
     static ref CURRENT_ACTIVE_SCREEN: std::sync::RwLock<ActiveScreen> = std::sync::RwLock::new(ActiveScreen::Host);
     static ref SCREEN_DIMENSIONS: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((1366, 768));
     static ref LAST_CURSOR: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((0, 0));
+    static ref VERTICAL_OFFSET_RATIO: std::sync::RwLock<f32> = std::sync::RwLock::new(0.0);
 }
 
 pub struct MouseEdgeMonitor {
@@ -61,6 +62,15 @@ impl MouseEdgeMonitor {
         {
             if let Ok(mut arr) = CURRENT_ARRANGEMENT.write() {
                 *arr = arrangement;
+            }
+        }
+    }
+
+    pub async fn set_vertical_offset(&self, offset: f32) {
+        #[cfg(windows)]
+        {
+            if let Ok(mut off) = VERTICAL_OFFSET_RATIO.write() {
+                *off = offset;
             }
         }
     }
@@ -148,7 +158,8 @@ impl MouseEdgeMonitor {
                             };
 
                             if crossed {
-                                let y_ratio = (y as f32 / screen_h as f32).clamp(0.0, 1.0);
+                                let offset = VERTICAL_OFFSET_RATIO.read().map(|o| *o).unwrap_or(0.0);
+                                let y_ratio = ((y as f32 / screen_h as f32) - offset).clamp(0.0, 1.0);
                                 if let Ok(mut s) = CURRENT_ACTIVE_SCREEN.write() {
                                     *s = ActiveScreen::Client;
                                 }

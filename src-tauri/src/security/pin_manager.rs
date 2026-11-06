@@ -1,7 +1,9 @@
+use std::collections::HashSet;
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub const PIN_VALIDITY_SECONDS: u64 = 300; // 5 minutes
@@ -48,19 +50,54 @@ impl ActivePin {
     }
 }
 
+fn get_trusted_storage_path() -> PathBuf {
+    let base = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let dir = base.join(".airdesk");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join("trusted_devices.json")
+}
+
 pub struct PinManager {
     current_pin: Option<ActivePin>,
     pending_approval: Option<PendingClient>,
     paired_device: Option<PairedDevice>,
+    trusted_devices: HashSet<String>,
 }
 
 impl PinManager {
     pub fn new() -> Self {
+        let trusted = Self::load_trusted_devices();
         Self {
             current_pin: None,
             pending_approval: None,
             paired_device: None,
+            trusted_devices: trusted,
         }
+    }
+
+    pub fn load_trusted_devices() -> HashSet<String> {
+        let path = get_trusted_storage_path();
+        if let Ok(data) = std::fs::read_to_string(path) {
+            if let Ok(set) = serde_json::from_str::<HashSet<String>>(&data) {
+                return set;
+            }
+        }
+        HashSet::new()
+    }
+
+    pub fn save_trusted_device(&mut self, device_id: &str) {
+        self.trusted_devices.insert(device_id.to_string());
+        let path = get_trusted_storage_path();
+        if let Ok(data) = serde_json::to_string(&self.trusted_devices) {
+            let _ = std::fs::write(path, data);
+        }
+    }
+
+    pub fn is_trusted(&self, device_id: &str) -> bool {
+        self.trusted_devices.contains(device_id)
     }
 
     pub fn generate_new_pin(&mut self) -> (String, u64) {
@@ -87,21 +124,38 @@ impl PinManager {
         (pin_str, PIN_VALIDITY_SECONDS)
     }
 
-    pub fn verify_pin(&self, entered_pin: &str) -> Result<String, &'static str> {
-        let active = match &self.current_pin {
-            Some(p) => p,
-            None => return Err("No active PIN generated on Host. Please click 'Create Connection'."),
-        };
-
-        if active.is_expired() {
-            return Err("Connection Key has expired. Please request a new 6-digit key.");
+    pub fn verify_pin(&mut self, entered_pin: &str, client_id: &str) -> Result<String, &'static str> {
+        // Auto-connect for previously paired / trusted devices
+        if entered_pin.trim() == "auto_connect" || self.is_trusted(client_id) {
+            self.save_trusted_device(client_id);
+            return Ok(format!("trusted_token_{}", client_id));
         }
 
-        if active.pin != entered_pin.trim() {
+        let (token, pin_matches) = match &self.current_pin {
+            Some(p) => {
+                if p.is_expired() {
+                    if self.is_trusted(client_id) {
+                        return Ok(format!("trusted_token_{}", client_id));
+                    }
+                    return Err("Connection Key has expired. Please request a new 6-digit key.");
+                }
+                (p.token.clone(), p.pin == entered_pin.trim())
+            }
+            None => {
+                if self.is_trusted(client_id) {
+                    return Ok(format!("trusted_token_{}", client_id));
+                }
+                return Err("No active PIN generated on Host. Please click 'Create Connection' or enable Auto-Connect.");
+            }
+        };
+
+        if !pin_matches {
             return Err("Invalid 6-digit PIN. Please verify and try again.");
         }
 
-        Ok(active.token.clone())
+        // Save trusted device for future zero-click auto-connects
+        self.save_trusted_device(client_id);
+        Ok(token)
     }
 
     pub fn set_pending_client(&mut self, client: PendingClient) {
@@ -117,8 +171,8 @@ impl PinManager {
     }
 
     pub fn set_paired_device(&mut self, device: PairedDevice) {
+        self.save_trusted_device(&device.device_id);
         self.paired_device = Some(device);
-        // Clear active PIN once successfully paired to prevent reuse
         self.current_pin = None;
         self.pending_approval = None;
     }

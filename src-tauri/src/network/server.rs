@@ -165,10 +165,10 @@ impl NetworkServer {
             _ => return Err("Expected PairRequest as initial message".into()),
         };
 
-        // Step 2: Validate 6-digit PIN
+        // Step 2: Validate 6-digit PIN or Auto-Connect trusted device
         let pin_verify_result = {
-            let mgr = pin_manager.read().await;
-            mgr.verify_pin(&pair_request.pin)
+            let mut mgr = pin_manager.write().await;
+            mgr.verify_pin(&pair_request.pin, &pair_request.client_id)
         };
 
         match pin_verify_result {

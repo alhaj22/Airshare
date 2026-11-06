@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../services/tauriBridge';
 import type {
   ConnectionStatus,
@@ -61,6 +61,26 @@ export function useAirDesk() {
     return () => clearInterval(interval);
   }, []);
 
+  // Auto-Connect for trusted devices on local Wi-Fi
+  const autoConnectAttempted = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (status.mode === 'connected' || status.mode === 'client' || autoConnectAttempted.current) {
+      return;
+    }
+
+    if (discoveredDevices.length > 0 && status.mode === 'idle') {
+      const hostDev = discoveredDevices.find((d) => d.is_host);
+      if (hostDev) {
+        autoConnectAttempted.current = true;
+        showNotification(`Auto-connecting with ${hostDev.device_name}...`, 'info');
+        joinHost(hostDev.ip, 'auto_connect').catch(() => {
+          autoConnectAttempted.current = false;
+        });
+      }
+    }
+  }, [discoveredDevices, status.mode]);
+
   // Action: Create connection as Host
   const startHost = async () => {
     try {
@@ -106,10 +126,9 @@ export function useAirDesk() {
   };
 
   // Action: Switch arrangement
-  const updateArrangement = async (arr: ScreenArrangementType) => {
+  const updateArrangement = async (arr: ScreenArrangementType, vOffset?: number) => {
     setScreenArrangement(arr);
-    await api.setScreenArrangement(arr);
-    showNotification('Screen layout updated', 'info');
+    await api.setScreenArrangement(arr, vOffset);
   };
 
   // Cursor switch (switches control to remote computer or back to local computer)
