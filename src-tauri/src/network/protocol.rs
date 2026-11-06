@@ -22,6 +22,11 @@ pub enum NetworkMessage {
     // Clipboard synchronization
     ClipboardSync(ClipboardSyncPayload),
 
+    // File Drag & Drop Transfer
+    FileTransferInit(FileTransferInitPayload),
+    FileChunk(FileChunkPayload),
+    FileTransferAck(FileTransferAckPayload),
+
     // Keepalive and teardown
     Ping { timestamp: u64 },
     Pong { timestamp: u64 },
@@ -102,6 +107,29 @@ pub struct SwitchScreenPayload {
 pub struct ClipboardSyncPayload {
     pub text: String,
     pub hash: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileTransferInitPayload {
+    pub file_name: String,
+    pub file_size: u64,
+    pub total_chunks: u32,
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileChunkPayload {
+    pub session_id: String,
+    pub chunk_index: u32,
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileTransferAckPayload {
+    pub session_id: String,
+    pub file_name: String,
+    pub success: bool,
+    pub destination_path: Option<String>,
 }
 
 // Framing helper: encode message as length-prefixed JSON byte stream

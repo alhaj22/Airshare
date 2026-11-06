@@ -28,8 +28,31 @@ pub struct MouseEdgeMonitor {
     is_running: Arc<AtomicBool>,
 }
 
+#[cfg(windows)]
+static mut MOUSE_HOOK_TX: Option<mpsc::UnboundedSender<NetworkMessage>> = None;
+#[cfg(windows)]
+static mut UI_EVENT_TX: Option<mpsc::UnboundedSender<String>> = None;
+#[cfg(windows)]
+static mut CURRENT_ARRANGEMENT: ScreenArrangement = ScreenArrangement::HostLeftClientRight;
+#[cfg(windows)]
+static mut CURRENT_ACTIVE_SCREEN: ActiveScreen = ActiveScreen::Host;
+#[cfg(windows)]
+static mut SCREEN_W: i32 = 1920;
+#[cfg(windows)]
+static mut SCREEN_H: i32 = 1080;
+#[cfg(windows)]
+static mut LAST_CURSOR_X: i32 = 0;
+#[cfg(windows)]
+static mut LAST_CURSOR_Y: i32 = 0;
+
 impl MouseEdgeMonitor {
     pub fn new(screen_width: u32, screen_height: u32) -> Self {
+        #[cfg(windows)]
+        unsafe {
+            SCREEN_W = screen_width as i32;
+            SCREEN_H = screen_height as i32;
+        }
+
         Self {
             screen_width,
             screen_height,
@@ -41,6 +64,10 @@ impl MouseEdgeMonitor {
 
     pub async fn set_arrangement(&self, arrangement: ScreenArrangement) {
         *self.arrangement.write().await = arrangement;
+        #[cfg(windows)]
+        unsafe {
+            CURRENT_ARRANGEMENT = arrangement;
+        }
     }
 
     pub async fn get_active_screen(&self) -> ActiveScreen {
@@ -49,6 +76,14 @@ impl MouseEdgeMonitor {
 
     pub async fn set_active_screen(&self, screen: ActiveScreen) {
         *self.active_screen.write().await = screen;
+        #[cfg(windows)]
+        unsafe {
+            CURRENT_ACTIVE_SCREEN = screen;
+            if screen == ActiveScreen::Host {
+                // Unpark host cursor
+                windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor(std::ptr::null());
+            }
+        }
     }
 
     pub fn start_monitor(
@@ -58,95 +93,140 @@ impl MouseEdgeMonitor {
     ) {
         self.is_running.store(true, Ordering::SeqCst);
         let is_running = self.is_running.clone();
-        let arrangement_arc = self.arrangement.clone();
-        let active_screen_arc = self.active_screen.clone();
-        let screen_w = self.screen_width as i32;
-        let screen_h = self.screen_height as i32;
+
+        #[cfg(windows)]
+        unsafe {
+            MOUSE_HOOK_TX = Some(network_tx);
+            UI_EVENT_TX = Some(ui_event_tx);
+            CURRENT_ARRANGEMENT = *self.arrangement.blocking_read();
+            CURRENT_ACTIVE_SCREEN = *self.active_screen.blocking_read();
+        }
 
         std::thread::spawn(move || {
             #[cfg(windows)]
-            {
-                use windows_sys::Win32::Foundation::POINT;
-                use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetCursorPos};
+            unsafe {
+                use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+                use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW,
+                    UnhookWindowsHookEx, MSG, MSLLHOOKSTRUCT, WH_MOUSE_LL,
+                    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+                    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP,
+                };
 
-                let mut last_pos = POINT { x: 0, y: 0 };
-                unsafe { GetCursorPos(&mut last_pos); }
+                unsafe extern "system" fn low_level_mouse_proc(
+                    n_code: i32,
+                    w_param: WPARAM,
+                    l_param: LPARAM,
+                ) -> LRESULT {
+                    if n_code >= 0 {
+                        let ms = *(l_param as *const MSLLHOOKSTRUCT);
+                        let x = ms.pt.x;
+                        let y = ms.pt.y;
 
-                while is_running.load(Ordering::SeqCst) {
-                    let mut current_pos = POINT { x: 0, y: 0 };
-                    unsafe {
-                        if GetCursorPos(&mut current_pos) != 0 {
-                            let active = {
-                                let rt = tokio::runtime::Handle::try_current();
-                                match rt {
-                                    Ok(h) => h.block_on(async { *active_screen_arc.read().await }),
-                                    Err(_) => ActiveScreen::Host,
-                                }
+                        if CURRENT_ACTIVE_SCREEN == ActiveScreen::Host {
+                            // Boundary detection
+                            let crossed = match CURRENT_ARRANGEMENT {
+                                ScreenArrangement::HostLeftClientRight => x >= SCREEN_W - 2,
+                                ScreenArrangement::HostRightClientLeft => x <= 1,
+                                ScreenArrangement::HostTopClientBottom => y >= SCREEN_H - 2,
+                                ScreenArrangement::HostBottomClientTop => y <= 1,
                             };
 
-                            let arr = {
-                                let rt = tokio::runtime::Handle::try_current();
-                                match rt {
-                                    Ok(h) => h.block_on(async { *arrangement_arc.read().await }),
-                                    Err(_) => ScreenArrangement::HostLeftClientRight,
-                                }
-                            };
+                            if crossed {
+                                let y_ratio = (y as f32 / SCREEN_H as f32).clamp(0.0, 1.0);
+                                CURRENT_ACTIVE_SCREEN = ActiveScreen::Client;
+                                LAST_CURSOR_X = x;
+                                LAST_CURSOR_Y = y;
 
-                            if active == ActiveScreen::Host {
-                                // Check if mouse crossed edge towards Client
-                                let crossed = match arr {
-                                    ScreenArrangement::HostLeftClientRight => current_pos.x >= screen_w - 2,
-                                    ScreenArrangement::HostRightClientLeft => current_pos.x <= 1,
-                                    ScreenArrangement::HostTopClientBottom => current_pos.y >= screen_h - 2,
-                                    ScreenArrangement::HostBottomClientTop => current_pos.y <= 1,
-                                };
-
-                                if crossed {
-                                    let y_ratio = (current_pos.y as f32 / screen_h as f32).clamp(0.0, 1.0);
-                                    info!("Cursor crossed boundary to Client! Y-ratio: {}", y_ratio);
-
-                                    // Switch active screen to Client
-                                    if let Ok(h) = tokio::runtime::Handle::try_current() {
-                                        h.block_on(async {
-                                            *active_screen_arc.write().await = ActiveScreen::Client;
-                                        });
-                                    }
-
-                                    let _ = network_tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
+                                if let Some(tx) = &MOUSE_HOOK_TX {
+                                    let _ = tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
                                         active_device: "client".to_string(),
                                         entry_y_ratio: y_ratio,
                                     }));
-                                    let _ = ui_event_tx.send("active_screen:client".to_string());
-
-                                    // Park cursor at boundary center
-                                    SetCursorPos(screen_w / 2, screen_h / 2);
-                                    last_pos.x = screen_w / 2;
-                                    last_pos.y = screen_h / 2;
                                 }
-                            } else {
-                                // Active screen is Client: capture local mouse movements as deltas and stream them
-                                let dx = current_pos.x - last_pos.x;
-                                let dy = current_pos.y - last_pos.y;
 
-                                if dx != 0 || dy != 0 {
-                                    let _ = network_tx.send(NetworkMessage::MouseMove(MouseMovePayload {
-                                        dx,
-                                        dy,
-                                        abs_x: None,
-                                        abs_y: None,
-                                    }));
+                                if let Some(ui_tx) = &UI_EVENT_TX {
+                                    let _ = ui_tx.send("active_screen:client".to_string());
+                                }
 
-                                    // Keep host cursor pinned in center of host screen while controlling client
-                                    SetCursorPos(screen_w / 2, screen_h / 2);
-                                    last_pos.x = screen_w / 2;
-                                    last_pos.y = screen_h / 2;
+                                return 1; // Suppress event on host
+                            }
+                        } else {
+                            // Client is active: stream events and swallow locally
+                            if let Some(tx) = &MOUSE_HOOK_TX {
+                                match w_param as u32 {
+                                    WM_MOUSEMOVE => {
+                                        let dx = x - LAST_CURSOR_X;
+                                        let dy = y - LAST_CURSOR_Y;
+                                        if dx != 0 || dy != 0 {
+                                            let _ = tx.send(NetworkMessage::MouseMove(MouseMovePayload {
+                                                dx,
+                                                dy,
+                                                abs_x: None,
+                                                abs_y: None,
+                                            }));
+                                        }
+                                        LAST_CURSOR_X = x;
+                                        LAST_CURSOR_Y = y;
+                                        return 1;
+                                    }
+                                    WM_LBUTTONDOWN => {
+                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 0, state: 1 }));
+                                        return 1;
+                                    }
+                                    WM_LBUTTONUP => {
+                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 0, state: 0 }));
+                                        return 1;
+                                    }
+                                    WM_RBUTTONDOWN => {
+                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 1, state: 1 }));
+                                        return 1;
+                                    }
+                                    WM_RBUTTONUP => {
+                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 1, state: 0 }));
+                                        return 1;
+                                    }
+                                    WM_MBUTTONDOWN => {
+                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 2, state: 1 }));
+                                        return 1;
+                                    }
+                                    WM_MBUTTONUP => {
+                                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 2, state: 0 }));
+                                        return 1;
+                                    }
+                                    WM_MOUSEWHEEL => {
+                                        let delta = ((ms.mouseData >> 16) as i16 as i32) / 120;
+                                        let _ = tx.send(NetworkMessage::MouseWheel(MouseWheelPayload { delta_x: 0, delta_y: delta }));
+                                        return 1;
+                                    }
+                                    _ => {}
                                 }
                             }
                         }
                     }
 
-                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    CallNextHookEx(std::ptr::null_mut(), n_code, w_param, l_param)
                 }
+
+                let hook = SetWindowsHookExW(
+                    WH_MOUSE_LL,
+                    Some(low_level_mouse_proc),
+                    GetModuleHandleW(std::ptr::null()),
+                    0,
+                );
+
+                if hook.is_null() {
+                    log::error!("Failed to install low-level mouse hook");
+                    return;
+                }
+
+                let mut msg: MSG = std::mem::zeroed();
+                while is_running.load(Ordering::SeqCst) && GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                    DispatchMessageW(&msg);
+                }
+
+                UnhookWindowsHookEx(hook);
             }
         });
     }

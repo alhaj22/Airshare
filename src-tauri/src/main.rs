@@ -8,6 +8,10 @@ mod mouse;
 mod network;
 mod security;
 
+use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use serde::{Deserialize, Serialize};
@@ -51,10 +55,12 @@ pub struct AppState {
     pub server: Arc<RwLock<Option<NetworkServer>>>,
     pub client: Arc<RwLock<Option<NetworkClient>>>,
     pub edge_monitor: Arc<MouseEdgeMonitor>,
+    pub keyboard_hook: Arc<KeyboardHookManager>,
     pub clipboard_watcher: Arc<ClipboardWatcher>,
     pub mouse_sim: Arc<MouseSimulator>,
     pub keyboard_sim: Arc<KeyboardSimulator>,
     pub sys_info: SystemInfo,
+    pub active_transfers: Arc<RwLock<HashMap<String, PathBuf>>>,
 }
 
 #[tauri::command]
@@ -74,7 +80,7 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
 
     // Start TCP server
     let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<NetworkMessage>();
-    let (status_tx, mut status_rx) = mpsc::unbounded_channel::<String>();
+    let (status_tx, _status_rx) = mpsc::unbounded_channel::<String>();
 
     let mut server = NetworkServer::new(
         state.pin_manager.clone(),
@@ -84,14 +90,34 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
         state.sys_info.screen_height,
     );
 
-    server.start(msg_tx, status_tx).await.map_err(|e| e.to_string())?;
+    server.start(msg_tx.clone(), status_tx).await.map_err(|e| e.to_string())?;
     *state.server.write().await = Some(server);
+
+    // Start Real Windows Low-Level Mouse & Keyboard Hooks
+    let (ui_tx, mut _ui_rx) = mpsc::unbounded_channel::<String>();
+    let (switch_back_tx, mut switch_back_rx) = mpsc::unbounded_channel::<()>();
+
+    state.edge_monitor.start_monitor(msg_tx.clone(), ui_tx);
+    state.keyboard_hook.start_hook(msg_tx.clone(), switch_back_tx);
+    state.clipboard_watcher.start(msg_tx.clone());
+
+    // Emergency recall listener
+    let edge_mon_clone = state.edge_monitor.clone();
+    let kb_hook_clone = state.keyboard_hook.clone();
+    tokio::spawn(async move {
+        while let Some(()) = switch_back_rx.recv().await {
+            edge_mon_clone.set_active_screen(ActiveScreen::Host).await;
+            kb_hook_clone.update_active_screen(ActiveScreen::Host);
+        }
+    });
 
     // Start background event handler for incoming server messages
     let clip_watcher = state.clipboard_watcher.clone();
     let edge_mon = state.edge_monitor.clone();
+    let kb_hook = state.keyboard_hook.clone();
     let m_sim = state.mouse_sim.clone();
     let k_sim = state.keyboard_sim.clone();
+    let transfers = state.active_transfers.clone();
 
     tokio::spawn(async move {
         while let Some(msg) = msg_rx.recv().await {
@@ -106,6 +132,7 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
                         ActiveScreen::Client
                     };
                     edge_mon.set_active_screen(target).await;
+                    kb_hook.update_active_screen(target);
                 }
                 NetworkMessage::MouseMove(p) => {
                     m_sim.move_relative(p.dx, p.dy);
@@ -118,6 +145,20 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
                 }
                 NetworkMessage::KeyEvent(p) => {
                     k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref());
+                }
+                NetworkMessage::FileTransferInit(init) => {
+                    let download_dir = dirs_fallback().join("AirDesk");
+                    let _ = std::fs::create_dir_all(&download_dir);
+                    let target_path = download_dir.join(&init.file_name);
+                    let _ = std::fs::File::create(&target_path);
+                    transfers.write().await.insert(init.session_id, target_path);
+                }
+                NetworkMessage::FileChunk(chunk) => {
+                    if let Some(path) = transfers.read().await.get(&chunk.session_id) {
+                        if let Ok(mut file) = OpenOptions::new().append(true).open(path) {
+                            let _ = file.write_all(&chunk.data);
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -160,6 +201,8 @@ async fn join_connection(
     let m_sim = state.mouse_sim.clone();
     let k_sim = state.keyboard_sim.clone();
     let edge_mon = state.edge_monitor.clone();
+    let kb_hook = state.keyboard_hook.clone();
+    let transfers = state.active_transfers.clone();
 
     tokio::spawn(async move {
         while let Some(msg) = incoming_rx.recv().await {
@@ -186,6 +229,21 @@ async fn join_connection(
                         ActiveScreen::Client
                     };
                     edge_mon.set_active_screen(target).await;
+                    kb_hook.update_active_screen(target);
+                }
+                NetworkMessage::FileTransferInit(init) => {
+                    let download_dir = dirs_fallback().join("AirDesk");
+                    let _ = std::fs::create_dir_all(&download_dir);
+                    let target_path = download_dir.join(&init.file_name);
+                    let _ = std::fs::File::create(&target_path);
+                    transfers.write().await.insert(init.session_id, target_path);
+                }
+                NetworkMessage::FileChunk(chunk) => {
+                    if let Some(path) = transfers.read().await.get(&chunk.session_id) {
+                        if let Ok(mut file) = OpenOptions::new().append(true).open(path) {
+                            let _ = file.write_all(&chunk.data);
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -265,6 +323,13 @@ async fn get_connection_status(state: tauri::State<'_, AppState>) -> Result<Conn
     })
 }
 
+fn dirs_fallback() -> PathBuf {
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(|h| PathBuf::from(h).join("Downloads"))
+        .unwrap_or_else(|_| PathBuf::from("./downloads"))
+}
+
 fn main() {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
@@ -298,7 +363,9 @@ fn main() {
         42426,
     ));
 
+    let active_screen = Arc::new(tokio::sync::RwLock::new(ActiveScreen::Host));
     let edge_mon = Arc::new(MouseEdgeMonitor::new(1920, 1080));
+    let keyboard_hook = Arc::new(KeyboardHookManager::new(active_screen));
     let clip_watcher = Arc::new(ClipboardWatcher::new());
     let mouse_sim = Arc::new(MouseSimulator::new(1920, 1080));
     let keyboard_sim = Arc::new(KeyboardSimulator::new());
@@ -315,10 +382,12 @@ fn main() {
         server: Arc::new(RwLock::new(None)),
         client: Arc::new(RwLock::new(None)),
         edge_monitor: edge_mon,
+        keyboard_hook,
         clipboard_watcher: clip_watcher,
         mouse_sim,
         keyboard_sim,
         sys_info,
+        active_transfers: Arc::new(RwLock::new(HashMap::new())),
     };
 
     tauri::Builder::default()
