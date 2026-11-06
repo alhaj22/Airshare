@@ -154,6 +154,9 @@ impl KeyboardHookManager {
                                     if (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0 {
                                         modifiers |= 4;
                                     }
+                                    if (GetAsyncKeyState(0x5B) as u16 & 0x8000) != 0 || (GetAsyncKeyState(0x5C) as u16 & 0x8000) != 0 {
+                                        modifiers |= 8;
+                                    }
 
                                     let ch = if is_down { vk_to_char(vk_code, shift_pressed) } else { None };
 

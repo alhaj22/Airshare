@@ -70,27 +70,61 @@ mod macos {
             0x08 => 51,  // Backspace -> Mac Delete
             0x09 => 48,  // Tab
             0x0D => 36,  // Enter / Return
+            0x14 => 57,  // CapsLock
             0x1B => 53,  // Escape
             0x20 => 49,  // Spacebar
 
-            // Arrows
-            0x25 => 123, // Left
-            0x26 => 126, // Up
-            0x27 => 124, // Right
-            0x28 => 125, // Down
-
-            // Modifiers: Windows Ctrl maps to Mac Command for natural shortcuts (Cmd+C/V/Z)
-            0x11 | 0xA2 | 0xA3 => 55, // VK_CONTROL -> Mac Command
-            0x5B | 0x5C => 55,        // VK_LWIN / VK_RWIN -> Mac Command
-            0x10 | 0xA0 | 0xA1 => 56, // VK_SHIFT -> Mac Shift
-            0x12 | 0xA4 | 0xA5 => 58, // VK_MENU / Alt -> Mac Option
-
-            // Common keys
+            // Arrows & Navigation
+            0x25 => 123, // Left Arrow
+            0x26 => 126, // Up Arrow
+            0x27 => 124, // Right Arrow
+            0x28 => 125, // Down Arrow
             0x2E => 117, // Delete -> Forward Delete
             0x24 => 115, // Home
             0x23 => 119, // End
             0x21 => 116, // PageUp
             0x22 => 121, // PageDown
+            0x2D => 114, // Insert -> Help
+
+            // Function Keys F1 - F12
+            0x70 => 122, // F1
+            0x71 => 120, // F2
+            0x72 => 99,  // F3
+            0x73 => 118, // F4
+            0x74 => 96,  // F5
+            0x75 => 97,  // F6
+            0x76 => 98,  // F7
+            0x77 => 100, // F8
+            0x78 => 101, // F9
+            0x79 => 109, // F10
+            0x7A => 103, // F11
+            0x7B => 111, // F12
+
+            // Numpad Keys
+            0x60 => 82, // Numpad 0
+            0x61 => 83, // Numpad 1
+            0x62 => 84, // Numpad 2
+            0x63 => 85, // Numpad 3
+            0x64 => 86, // Numpad 4
+            0x65 => 87, // Numpad 5
+            0x66 => 88, // Numpad 6
+            0x67 => 89, // Numpad 7
+            0x68 => 91, // Numpad 8
+            0x69 => 92, // Numpad 9
+            0x6A => 67, // Numpad *
+            0x6B => 69, // Numpad +
+            0x6D => 78, // Numpad -
+            0x6E => 65, // Numpad .
+            0x6F => 75, // Numpad /
+
+            // Modifiers: Windows Ctrl maps to Mac Command for natural shortcuts (Cmd+C/V/Z)
+            0x11 | 0xA2 => 55, // Left Ctrl -> Mac Command
+            0xA3 => 54,        // Right Ctrl -> Mac Right Command
+            0x5B | 0x5C => 59, // Windows Key -> Mac Control
+            0x10 | 0xA0 => 56, // Left Shift -> Mac Left Shift
+            0xA1 => 60,        // Right Shift -> Mac Right Shift
+            0x12 | 0xA4 => 58, // Left Alt -> Mac Option (Alt)
+            0xA5 => 61,        // Right Alt -> Mac Right Option
 
             // Symbols & Punctuation
             0xBA => 41, // ;
@@ -117,7 +151,7 @@ impl KeyboardSimulator {
         Self
     }
 
-    pub fn key_event(&self, vk_code: u32, is_down: bool, key_char: Option<&str>) {
+    pub fn key_event(&self, vk_code: u32, is_down: bool, key_char: Option<&str>, modifiers: u8) {
         #[cfg(windows)]
         unsafe {
             if vk_code > 0 {
@@ -163,10 +197,38 @@ impl KeyboardSimulator {
 
             let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), code_to_use, is_down);
             if !evt.is_null() {
-                if let Some(ch) = key_char {
-                    let utf16: Vec<u16> = ch.encode_utf16().collect();
-                    CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
+                // Map Windows modifier bitmask to macOS CoreGraphics CGEventFlags:
+                // Bit 0: Shift -> kCGEventFlagMaskShift (0x00020000)
+                // Bit 1: Ctrl  -> kCGEventFlagMaskCommand (0x00100000) [Windows Ctrl translates to Mac Cmd!]
+                // Bit 2: Alt   -> kCGEventFlagMaskAlternate (0x00080000) [Windows Alt translates to Mac Option!]
+                // Bit 3: Win   -> kCGEventFlagMaskControl (0x00040000) [Windows Key translates to Mac Ctrl!]
+                let mut cg_flags: u64 = 0;
+                if (modifiers & 1) != 0 {
+                    cg_flags |= 0x00020000; // Shift
                 }
+                if (modifiers & 2) != 0 {
+                    cg_flags |= 0x00100000; // Command (⌘)
+                }
+                if (modifiers & 4) != 0 {
+                    cg_flags |= 0x00080000; // Option (⌥)
+                }
+                if (modifiers & 8) != 0 {
+                    cg_flags |= 0x00040000; // Control (^)
+                }
+
+                if cg_flags != 0 {
+                    CGEventSetFlags(evt, cg_flags);
+                }
+
+                // If not executing a command/control shortcut, inject Unicode characters for text fidelity
+                let has_command_or_ctrl = (modifiers & 2) != 0 || (modifiers & 8) != 0;
+                if !has_command_or_ctrl {
+                    if let Some(ch) = key_char {
+                        let utf16: Vec<u16> = ch.encode_utf16().collect();
+                        CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
+                    }
+                }
+
                 // Post to both SessionEventTap (1) and HIDEventTap (0)
                 CGEventPost(1 /* kCGSessionEventTap */, evt);
                 CGEventPost(0 /* kCGHIDEventTap */, evt);

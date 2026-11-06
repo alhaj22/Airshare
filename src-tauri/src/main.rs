@@ -189,7 +189,7 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
                     m_sim.scroll(p.delta_x, p.delta_y);
                 }
                 NetworkMessage::KeyEvent(p) => {
-                    k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref());
+                    k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref(), p.modifiers);
                 }
                 NetworkMessage::FileTransferInit(init) => {
                     let download_dir = dirs_fallback().join("AirDesk");
@@ -295,7 +295,7 @@ async fn join_connection(
                     m_sim.scroll(p.delta_x, p.delta_y);
                 }
                 NetworkMessage::KeyEvent(p) => {
-                    k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref());
+                    k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref(), p.modifiers);
                 }
                 NetworkMessage::ClipboardSync(p) => {
                     clip_watcher.apply_incoming_text(&p.text, p.hash).await;
