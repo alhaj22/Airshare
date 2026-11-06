@@ -6,7 +6,7 @@ import { JoinSection } from '../components/JoinSection';
 import { ScreenArrangement } from '../components/ScreenArrangement';
 import { FeaturesBar } from '../components/FeaturesBar';
 import { MacPermissionsModal } from '../components/MacPermissionsModal';
-import { Apple, Info } from 'lucide-react';
+import { Apple, Info, Link2, Power, MousePointer2 } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
   const {
@@ -67,20 +67,71 @@ export const Dashboard: React.FC = () => {
           setClipboardSharing={setClipboardSharing}
         />
 
-        {/* 2-Column Pairing Grid: Host (Generate 6-Digit Key) vs Join (Enter 6-Digit Key) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <HostSection
-            status={status}
-            onStartHost={startHost}
-            onDisconnect={disconnect}
-          />
+        {/* Connected Session Center OR 2-Column Pairing Grid */}
+        {status.mode === 'connected' ? (
+          <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-slate-900/60 to-cyan-950/40 p-6 shadow-xl backdrop-blur-md">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-inner">
+                  <Link2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                      Active Session Established
+                    </span>
+                    {status.session?.session_id && (
+                      <span className="rounded bg-black/40 px-2 py-0.5 text-[10px] font-mono text-slate-400">
+                        {status.session.session_id}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-lg font-bold text-white mt-0.5 flex items-center gap-2">
+                    <span>{systemInfo?.device_name || 'This Computer'}</span>
+                    <span className="text-cyan-400">↔</span>
+                    <span>{status.peer_device || 'Remote Laptop'}</span>
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Connected via {status.peer_ip || 'Local LAN'} • Ultra low-latency hardware input sync
+                  </p>
+                </div>
+              </div>
 
-          <JoinSection
-            discoveredDevices={discoveredDevices}
-            onJoin={joinHost}
-            onSimulateConnect={simulatePeerConnection}
-          />
-        </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={toggleActiveScreen}
+                  className="flex items-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-700 px-4 py-2.5 text-xs font-semibold text-slate-200 border border-white/10 transition cursor-pointer"
+                >
+                  <MousePointer2 className="h-4 w-4 text-cyan-400" />
+                  <span>Control: {status.active_screen === 'host' ? 'This Laptop' : 'Remote Laptop'}</span>
+                </button>
+
+                <button
+                  onClick={disconnect}
+                  className="flex items-center gap-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 px-4 py-2.5 text-xs font-bold text-rose-300 hover:text-rose-200 transition cursor-pointer shadow-lg shadow-rose-950/40"
+                >
+                  <Power className="h-4 w-4" />
+                  <span>End Session</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <HostSection
+              status={status}
+              onStartHost={startHost}
+              onDisconnect={disconnect}
+            />
+
+            <JoinSection
+              discoveredDevices={discoveredDevices}
+              onJoin={joinHost}
+              onSimulateConnect={simulatePeerConnection}
+            />
+          </div>
+        )}
 
         {/* Interactive Screen Arrangement & Visualizer */}
         <ScreenArrangement
@@ -89,6 +140,7 @@ export const Dashboard: React.FC = () => {
           arrangement={screenArrangement}
           onArrangementChange={updateArrangement}
           onSimulateEdgeCross={toggleActiveScreen}
+          onDeviceDrop={(dev) => joinHost(dev.ip, 'auto_connect')}
         />
 
         {/* Bottom Helper Bar */}

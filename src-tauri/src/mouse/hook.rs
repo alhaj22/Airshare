@@ -57,6 +57,18 @@ pub fn set_current_active_screen(screen: ActiveScreen) {
     crate::keyboard::set_keyboard_active_screen(screen);
 }
 
+pub fn clear_mouse_hook_sender() {
+    #[cfg(windows)]
+    {
+        if let Ok(mut tx) = MOUSE_HOOK_TX.lock() {
+            *tx = None;
+        }
+        if let Ok(mut ui) = UI_EVENT_TX.lock() {
+            *ui = None;
+        }
+    }
+}
+
 pub fn set_remote_screen_size(width: u32, height: u32) {
     #[cfg(windows)]
     {
@@ -277,25 +289,25 @@ impl MouseEdgeMonitor {
                                                         match arrangement {
                                                             ScreenArrangement::HostLeftClientRight => {
                                                                 // Crossing back from Mac left edge into Windows right edge
-                                                                if next_x <= 0.0 && dx < 0 {
+                                                                if next_x <= 8.0 && dx < 0 {
                                                                     should_switch_back = true;
                                                                 }
                                                             }
                                                             ScreenArrangement::HostRightClientLeft => {
                                                                 // Crossing back from Mac right edge into Windows left edge
-                                                                if next_x >= rem_w && dx > 0 {
+                                                                if next_x >= rem_w - 8.0 && dx > 0 {
                                                                     should_switch_back = true;
                                                                 }
                                                             }
                                                             ScreenArrangement::HostTopClientBottom => {
                                                                 // Crossing back from Mac top edge into Windows bottom edge
-                                                                if next_y <= 0.0 && dy < 0 {
+                                                                if next_y <= 8.0 && dy < 0 {
                                                                     should_switch_back = true;
                                                                 }
                                                             }
                                                             ScreenArrangement::HostBottomClientTop => {
                                                                 // Crossing back from Mac bottom edge into Windows top edge
-                                                                if next_y >= rem_h && dy > 0 {
+                                                                if next_y >= rem_h - 8.0 && dy > 0 {
                                                                     should_switch_back = true;
                                                                 }
                                                             }

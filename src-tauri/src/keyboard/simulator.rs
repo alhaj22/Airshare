@@ -151,7 +151,7 @@ impl KeyboardSimulator {
         Self
     }
 
-    pub fn key_event(&self, vk_code: u32, is_down: bool, key_char: Option<&str>, modifiers: u8) {
+    pub fn key_event(&self, vk_code: u32, is_down: bool, key_char: Option<&str>, _modifiers: u8) {
         #[cfg(windows)]
         unsafe {
             if vk_code > 0 {
@@ -192,6 +192,7 @@ impl KeyboardSimulator {
         #[cfg(target_os = "macos")]
         unsafe {
             use macos::*;
+            let modifiers = _modifiers;
             let mac_code = win_vk_to_mac_key(vk_code);
             let code_to_use = if mac_code != 0xFFFF { mac_code } else { 0 };
 
@@ -220,17 +221,15 @@ impl KeyboardSimulator {
                     CGEventSetFlags(evt, cg_flags);
                 }
 
-                // If not executing a command/control shortcut, inject Unicode characters for text fidelity
-                let has_command_or_ctrl = (modifiers & 2) != 0 || (modifiers & 8) != 0;
-                if !has_command_or_ctrl {
+                // If virtual key wasn't directly mapped, fallback to Unicode string insertion
+                if mac_code == 0xFFFF {
                     if let Some(ch) = key_char {
                         let utf16: Vec<u16> = ch.encode_utf16().collect();
                         CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
                     }
                 }
 
-                // Post to both SessionEventTap (1) and HIDEventTap (0)
-                CGEventPost(1 /* kCGSessionEventTap */, evt);
+                // Post exclusively to kCGHIDEventTap (0) for native system-wide hardware input
                 CGEventPost(0 /* kCGHIDEventTap */, evt);
                 CFRelease(evt);
             }

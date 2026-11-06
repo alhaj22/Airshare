@@ -41,6 +41,47 @@ export function useAirDesk() {
     api.getSystemInfo().then(setSystemInfo);
   }, []);
 
+  // Reactive Event Listeners for Session Start and End
+  useEffect(() => {
+    let unlistenStart: (() => void) | undefined;
+    let unlistenEnd: (() => void) | undefined;
+
+    api.onSessionStarted((session) => {
+      setStatus({
+        mode: 'connected',
+        session,
+        peer_device: session.peer_name,
+        peer_ip: session.peer_ip,
+        peer_os: (session.peer_os.toLowerCase().includes('mac')
+          ? 'macos'
+          : session.peer_os.toLowerCase().includes('win')
+          ? 'windows'
+          : 'linux'),
+        role: session.role,
+        active_screen: 'host',
+      });
+      showNotification(`Session connected with ${session.peer_name}!`, 'success');
+    }).then((unsub) => {
+      unlistenStart = unsub;
+    });
+
+    api.onSessionEnded(() => {
+      setStatus({
+        mode: 'idle',
+        active_screen: 'host',
+      });
+      autoConnectAttempted.current = false;
+      showNotification('Session ended. Keyboard and mouse sharing stopped.', 'info');
+    }).then((unsub) => {
+      unlistenEnd = unsub;
+    });
+
+    return () => {
+      if (unlistenStart) unlistenStart();
+      if (unlistenEnd) unlistenEnd();
+    };
+  }, [showNotification]);
+
   // Poll connection status and discovery
   useEffect(() => {
     const update = async () => {
@@ -101,10 +142,21 @@ export function useAirDesk() {
   const joinHost = async (hostIp: string, pin: string) => {
     try {
       showNotification('Verifying 6-Digit Key and connecting...', 'info');
-      await api.joinConnection(hostIp, pin);
-      const currStatus = await api.getConnectionStatus();
-      setStatus(currStatus);
-      showNotification('Connected successfully! Mouse and keyboard sharing active.', 'success');
+      const session = await api.joinConnection(hostIp, pin);
+      setStatus({
+        mode: 'connected',
+        session,
+        peer_device: session.peer_name,
+        peer_ip: session.peer_ip,
+        peer_os: (session.peer_os.toLowerCase().includes('mac')
+          ? 'macos'
+          : session.peer_os.toLowerCase().includes('win')
+          ? 'windows'
+          : 'linux'),
+        role: session.role,
+        active_screen: 'host',
+      });
+      showNotification(`Connected with ${session.peer_name}! Mouse and keyboard sharing active.`, 'success');
     } catch (err: unknown) {
       showNotification(`Connection failed: ${(err as Error).message}`, 'error');
       throw err;

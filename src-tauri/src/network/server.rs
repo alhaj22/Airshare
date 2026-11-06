@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, RwLock};
 use log::{error, info, warn};
 
 use super::protocol::{
-    serialize_message, NetworkMessage, PairResponsePayload,
+    serialize_message, ActiveSession, NetworkMessage, PairResponsePayload,
 };
 use crate::security::{PairedDevice, SharedPinManager};
 
@@ -147,6 +147,9 @@ impl NetworkServer {
         screen_w: u32,
         screen_h: u32,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Disable Nagle's algorithm for immediate, low-latency input packet delivery
+        let _ = stream.set_nodelay(true);
+
         // Step 1: Read PairRequest
         let mut len_buf = [0u8; 4];
         stream.read_exact(&mut len_buf).await?;
@@ -173,6 +176,12 @@ impl NetworkServer {
 
         match pin_verify_result {
             Ok(token) => {
+                let session_id = format!("sess_{}", rand::random::<u64>());
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
                 // PIN matches! Register paired device
                 {
                     let mut mgr = pin_manager.write().await;
@@ -181,21 +190,19 @@ impl NetworkServer {
                         device_name: pair_request.device_name.clone(),
                         os: pair_request.os.clone(),
                         ip: addr.ip().to_string(),
-                        paired_at: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs(),
+                        paired_at: now,
                         token: token.clone(),
                     });
                 }
 
                 crate::mouse::set_remote_screen_size(pair_request.screen_width, pair_request.screen_height);
 
-                // Send success response
+                // Send success response with session_id
                 let response = NetworkMessage::PairResponse(PairResponsePayload {
                     success: true,
                     reason: None,
                     session_token: Some(token),
+                    session_id: Some(session_id.clone()),
                     host_name,
                     host_os,
                     host_screen_width: screen_w,
@@ -204,7 +211,19 @@ impl NetworkServer {
                 let encoded = serialize_message(&response)?;
                 stream.write_all(&encoded).await?;
 
-                let _ = status_tx.send(format!("Connected to {}", pair_request.device_name));
+                let session = ActiveSession {
+                    session_id,
+                    peer_device_id: pair_request.client_id.clone(),
+                    peer_name: pair_request.device_name.clone(),
+                    peer_os: pair_request.os.clone(),
+                    peer_ip: addr.ip().to_string(),
+                    peer_screen_width: pair_request.screen_width,
+                    peer_screen_height: pair_request.screen_height,
+                    role: "host".to_string(),
+                    connected_at: now,
+                };
+                let session_json = serde_json::to_string(&session).unwrap_or_default();
+                let _ = status_tx.send(format!("CONNECTED:{}", session_json));
 
                 // Step 3: Stream message handling loop
                 let (mut reader, mut writer) = stream.into_split();
@@ -244,7 +263,7 @@ impl NetworkServer {
                         }
                     }
                     *active_client_clone.write().await = None;
-                    let _ = status_tx_clone.send("Disconnected".to_string());
+                    let _ = status_tx_clone.send("DISCONNECTED".to_string());
                 });
 
                 Ok(())
@@ -254,6 +273,7 @@ impl NetworkServer {
                     success: false,
                     reason: Some(err_msg.to_string()),
                     session_token: None,
+                    session_id: None,
                     host_name,
                     host_os,
                     host_screen_width: 0,

@@ -1,4 +1,5 @@
 import type {
+  ActiveSession,
   ConnectionStatus,
   DeviceOS,
   DiscoveredDevice,
@@ -96,27 +97,69 @@ export const api = {
     };
   },
 
-  async joinConnection(hostIp: string, pin: string): Promise<string> {
+  async joinConnection(hostIp: string, pin: string): Promise<ActiveSession> {
     if (isTauri) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        return await invoke<string>('join_connection', { hostIp, pin });
+        return await invoke<ActiveSession>('join_connection', { hostIp, pin });
       } catch (err) {
         throw new Error(String(err));
       }
     }
 
     // Mock validation
-    if (pin.trim().length !== 6) {
+    if (pin.trim().length !== 6 && pin.trim() !== 'auto_connect') {
       throw new Error('Please enter a valid 6-digit PIN');
     }
 
+    const mockSession: ActiveSession = {
+      session_id: 'mock_sess_' + Date.now(),
+      peer_device_id: 'host_' + hostIp,
+      peer_name: 'Windows Laptop (Host)',
+      peer_os: 'windows',
+      peer_ip: hostIp || '192.168.1.102',
+      peer_screen_width: 1920,
+      peer_screen_height: 1080,
+      role: 'client',
+      connected_at: Math.floor(Date.now() / 1000),
+    };
+
     mockState.mode = 'connected';
-    mockState.peerDevice = 'Windows Laptop (Host)';
-    mockState.peerIp = hostIp || '192.168.1.102';
+    mockState.peerDevice = mockSession.peer_name;
+    mockState.peerIp = mockSession.peer_ip;
     mockState.peerOs = 'windows';
 
-    return 'mock_session_token_' + Date.now();
+    return mockSession;
+  },
+
+  async onSessionStarted(callback: (session: ActiveSession) => void): Promise<() => void> {
+    if (isTauri) {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen<ActiveSession>('session_started', (event) => {
+          callback(event.payload);
+        });
+        return unlisten;
+      } catch (err) {
+        console.warn('Failed to listen to session_started', err);
+      }
+    }
+    return () => {};
+  },
+
+  async onSessionEnded(callback: () => void): Promise<() => void> {
+    if (isTauri) {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen('session_ended', () => {
+          callback();
+        });
+        return unlisten;
+      } catch (err) {
+        console.warn('Failed to listen to session_ended', err);
+      }
+    }
+    return () => {};
   },
 
   async getDiscoveredDevices(): Promise<DiscoveredDevice[]> {

@@ -1,6 +1,19 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveSession {
+    pub session_id: String,
+    pub peer_device_id: String,
+    pub peer_name: String,
+    pub peer_os: String,
+    pub peer_ip: String,
+    pub peer_screen_width: u32,
+    pub peer_screen_height: u32,
+    pub role: String, // "host" or "client"
+    pub connected_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum NetworkMessage {
     PairRequest(PairRequestPayload),
@@ -48,6 +61,7 @@ pub struct PairResponsePayload {
     pub success: bool,
     pub reason: Option<String>,
     pub session_token: Option<String>,
+    pub session_id: Option<String>,
     pub host_name: String,
     pub host_os: String,
     pub host_screen_width: u32,

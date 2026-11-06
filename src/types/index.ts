@@ -33,11 +33,27 @@ export interface HostPinResponse {
   host_ip: string;
 }
 
+export interface ActiveSession {
+  session_id: string;
+  peer_device_id: string;
+  peer_name: string;
+  peer_os: string;
+  peer_ip: string;
+  peer_screen_width: number;
+  peer_screen_height: number;
+  role: 'host' | 'client';
+  connected_at: number;
+}
+
 export interface ConnectionStatus {
   mode: AppMode;
+  session?: ActiveSession;
   peer_device?: string;
   peer_ip?: string;
   peer_os?: DeviceOS;
+  peer_screen_width?: number;
+  peer_screen_height?: number;
+  role?: 'host' | 'client';
   active_screen: ActiveScreenType;
   pin?: string;
   pin_remaining_seconds?: number;

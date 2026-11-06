@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, RwLock};
 use log::info;
 
 use super::protocol::{
-    serialize_message, NetworkMessage, PairRequestPayload,
+    serialize_message, ActiveSession, NetworkMessage, PairRequestPayload,
 };
 
 pub struct NetworkClient {
@@ -45,11 +45,13 @@ impl NetworkClient {
         pin: &str,
         incoming_tx: mpsc::UnboundedSender<NetworkMessage>,
         status_tx: mpsc::UnboundedSender<String>,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<ActiveSession, Box<dyn std::error::Error + Send + Sync>> {
         let addr: SocketAddr = format!("{}:{}", host_ip, host_port).parse()?;
         info!("Connecting to AirDesk Host at {}", addr);
 
         let mut stream = TcpStream::connect(addr).await?;
+        // Disable Nagle's algorithm for immediate low-latency packet dispatch
+        let _ = stream.set_nodelay(true);
 
         // 1. Send PairRequest with entered 6-digit PIN
         let req = NetworkMessage::PairRequest(PairRequestPayload {
@@ -83,7 +85,23 @@ impl NetworkClient {
             return Err(reason.into());
         }
 
-        let token = pair_resp.session_token.unwrap_or_default();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let session = ActiveSession {
+            session_id: pair_resp.session_id.unwrap_or_else(|| format!("sess_{}", rand::random::<u64>())),
+            peer_device_id: format!("host_{}", host_ip),
+            peer_name: pair_resp.host_name.clone(),
+            peer_os: pair_resp.host_os.clone(),
+            peer_ip: host_ip.to_string(),
+            peer_screen_width: pair_resp.host_screen_width,
+            peer_screen_height: pair_resp.host_screen_height,
+            role: "client".to_string(),
+            connected_at: now,
+        };
+
         info!("Successfully paired with host '{}' ({})", pair_resp.host_name, pair_resp.host_os);
 
         *self.is_connected.write().await = true;
@@ -123,11 +141,12 @@ impl NetworkClient {
                 }
             }
             *is_connected_clone.write().await = false;
-            let _ = status_tx_clone.send("Disconnected from host".to_string());
+            let _ = status_tx_clone.send("DISCONNECTED".to_string());
         });
 
-        let _ = status_tx.send(format!("Connected to {}", pair_resp.host_name));
-        Ok(token)
+        let session_json = serde_json::to_string(&session).unwrap_or_default();
+        let _ = status_tx.send(format!("CONNECTED:{}", session_json));
+        Ok(session)
     }
 
     pub fn get_outbound_sender(&self) -> Option<mpsc::UnboundedSender<NetworkMessage>> {

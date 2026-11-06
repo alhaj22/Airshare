@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { LogIn, Wifi, Laptop, Monitor, Sparkles, Loader2 } from 'lucide-react';
+import { LogIn, Wifi, Laptop, Monitor, Sparkles, Loader2, GripVertical } from 'lucide-react';
 import type { DiscoveredDevice } from '../types';
 
 interface JoinSectionProps {
@@ -114,14 +114,21 @@ export const JoinSection: React.FC<JoinSectionProps> = ({
               discoveredDevices.map((dev) => (
                 <div
                   key={dev.device_id}
+                  draggable={true}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/json', JSON.stringify(dev));
+                    e.dataTransfer.effectAllowed = 'copyMove';
+                  }}
                   onClick={() => setSelectedIp(dev.ip)}
-                  className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 transition ${
+                  title="Drag onto the screen layout canvas below, or click to select"
+                  className={`flex cursor-grab active:cursor-grabbing items-center justify-between rounded-xl border p-3 transition select-none ${
                     selectedIp === dev.ip
                       ? 'border-indigo-500/60 bg-indigo-500/10'
                       : 'border-white/5 bg-slate-950/40 hover:border-white/15'
                   }`}
                 >
                   <div className="flex items-center gap-3">
+                    <GripVertical className="h-4 w-4 text-slate-500 shrink-0" />
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800 text-slate-300">
                       {dev.os === 'macos' ? (
                         <Laptop className="h-4 w-4 text-purple-400" />
@@ -147,19 +154,22 @@ export const JoinSection: React.FC<JoinSectionProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {onSimulateConnect && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedIp(dev.ip);
+                        if (onSimulateConnect) {
                           onSimulateConnect(dev);
-                        }}
-                        title="Simulate quick connection in preview"
-                        className="flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-slate-300 cursor-pointer"
-                      >
-                        <Sparkles className="h-3 w-3 text-amber-400" />
-                        <span>Pair</span>
-                      </button>
-                    )}
+                        } else {
+                          onJoin(dev.ip, 'auto_connect');
+                        }
+                      }}
+                      title="Pair instantly with this device"
+                      className="flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-slate-300 cursor-pointer border border-white/5"
+                    >
+                      <Sparkles className="h-3 w-3 text-amber-400" />
+                      <span>Pair</span>
+                    </button>
                     <span
                       className={`text-xs font-medium ${
                         selectedIp === dev.ip ? 'text-indigo-400' : 'text-slate-500'

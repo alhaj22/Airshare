@@ -15,12 +15,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 
 use clipboard::ClipboardWatcher;
 use discovery::{DiscoveredDevice, DiscoveryBeacon};
-use keyboard::{KeyboardHookManager, KeyboardSimulator};
-use mouse::{ActiveScreen, MouseEdgeMonitor, MouseSimulator, ScreenArrangement};
-use network::protocol::SwitchScreenPayload;
+use keyboard::{clear_keyboard_hook_sender, KeyboardHookManager, KeyboardSimulator};
+use mouse::{
+    clear_mouse_hook_sender, ActiveScreen, MouseEdgeMonitor, MouseSimulator, ScreenArrangement,
+};
+use network::protocol::{ActiveSession, SwitchScreenPayload};
 use network::{NetworkClient, NetworkMessage, NetworkServer};
 use security::{create_shared_pin_manager, SharedPinManager};
 
@@ -61,9 +64,14 @@ pub struct HostPinResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionStatus {
-    pub mode: String, // "idle", "hosting", "client", "connected"
+    pub mode: String, // "idle", "hosting", "connected"
+    pub session: Option<ActiveSession>,
     pub peer_device: Option<String>,
     pub peer_ip: Option<String>,
+    pub peer_os: Option<String>,
+    pub peer_screen_width: Option<u32>,
+    pub peer_screen_height: Option<u32>,
+    pub role: Option<String>, // "host" or "client"
     pub active_screen: String, // "host" or "client"
     pub pin: Option<String>,
     pub pin_remaining_seconds: Option<u64>,
@@ -74,6 +82,7 @@ pub struct AppState {
     pub discovery: Arc<DiscoveryBeacon>,
     pub server: Arc<RwLock<Option<NetworkServer>>>,
     pub client: Arc<RwLock<Option<NetworkClient>>>,
+    pub current_session: Arc<RwLock<Option<ActiveSession>>>,
     pub edge_monitor: Arc<MouseEdgeMonitor>,
     pub keyboard_hook: Arc<KeyboardHookManager>,
     pub clipboard_watcher: Arc<ClipboardWatcher>,
@@ -93,7 +102,10 @@ async fn get_system_info(state: tauri::State<'_, AppState>) -> Result<SystemInfo
 }
 
 #[tauri::command]
-async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<HostPinResponse, String> {
+async fn create_connection_pin(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<HostPinResponse, String> {
     let (pin, expires) = {
         let mut mgr = state.pin_manager.write().await;
         mgr.generate_new_pin()
@@ -104,7 +116,7 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
 
     // Start TCP server
     let (incoming_tx, mut incoming_rx) = mpsc::unbounded_channel::<NetworkMessage>();
-    let (status_tx, _status_rx) = mpsc::unbounded_channel::<String>();
+    let (status_tx, mut status_rx) = mpsc::unbounded_channel::<String>();
 
     let (screen_w, screen_h) = get_screen_resolution();
 
@@ -132,6 +144,36 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
     state.keyboard_hook.start_hook(outbound_tx.clone(), switch_back_tx);
     state.clipboard_watcher.start(outbound_tx.clone());
 
+    // Host status event listener (handles CONNECTED and DISCONNECTED from server socket)
+    let session_slot = state.current_session.clone();
+    let pin_mgr_clone = state.pin_manager.clone();
+    let disc_clone = state.discovery.clone();
+    let edge_mon_status = state.edge_monitor.clone();
+    let kb_hook_status = state.keyboard_hook.clone();
+    let app_handle_status = app_handle.clone();
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(status_str) = status_rx.recv().await {
+            if let Some(session_json) = status_str.strip_prefix("CONNECTED:") {
+                if let Ok(sess) = serde_json::from_str::<ActiveSession>(session_json) {
+                    log::info!("Session successfully activated on Host: {:?}", sess.session_id);
+                    *session_slot.write().await = Some(sess.clone());
+                    let _ = app_handle_status.emit("session_started", &sess);
+                }
+            } else if status_str == "DISCONNECTED" {
+                log::info!("Peer disconnected from Host. Teardown active session immediately.");
+                *session_slot.write().await = None;
+                pin_mgr_clone.write().await.disconnect();
+                disc_clone.set_is_host(false).await;
+                edge_mon_status.set_active_screen(ActiveScreen::Host).await;
+                kb_hook_status.update_active_screen(ActiveScreen::Host);
+                clear_keyboard_hook_sender();
+                clear_mouse_hook_sender();
+                let _ = app_handle_status.emit("session_ended", ());
+            }
+        }
+    });
+
     // Emergency recall listener (Ctrl+Alt+Shift+Esc or Pause key)
     let edge_mon_clone = state.edge_monitor.clone();
     let kb_hook_clone = state.keyboard_hook.clone();
@@ -158,6 +200,10 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
     let m_sim = state.mouse_sim.clone();
     let k_sim = state.keyboard_sim.clone();
     let transfers = state.active_transfers.clone();
+    let session_msg = state.current_session.clone();
+    let pin_mgr_msg = state.pin_manager.clone();
+    let disc_msg = state.discovery.clone();
+    let app_handle_msg = app_handle.clone();
 
     tauri::async_runtime::spawn(async move {
         while let Some(msg) = incoming_rx.recv().await {
@@ -191,6 +237,17 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
                 NetworkMessage::KeyEvent(p) => {
                     k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref(), p.modifiers);
                 }
+                NetworkMessage::Disconnect { reason } => {
+                    log::info!("Peer explicitly disconnected: {}. Ending session.", reason);
+                    *session_msg.write().await = None;
+                    pin_mgr_msg.write().await.disconnect();
+                    disc_msg.set_is_host(false).await;
+                    edge_mon.set_active_screen(ActiveScreen::Host).await;
+                    kb_hook.update_active_screen(ActiveScreen::Host);
+                    clear_keyboard_hook_sender();
+                    clear_mouse_hook_sender();
+                    let _ = app_handle_msg.emit("session_ended", ());
+                }
                 NetworkMessage::FileTransferInit(init) => {
                     let download_dir = dirs_fallback().join("AirDesk");
                     let _ = std::fs::create_dir_all(&download_dir);
@@ -221,10 +278,11 @@ async fn create_connection_pin(state: tauri::State<'_, AppState>) -> Result<Host
 async fn join_connection(
     host_ip: String,
     pin: String,
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<String, String> {
+) -> Result<ActiveSession, String> {
     let (incoming_tx, mut incoming_rx) = mpsc::unbounded_channel::<NetworkMessage>();
-    let (status_tx, _status_rx) = mpsc::unbounded_channel::<String>();
+    let (status_tx, mut status_rx) = mpsc::unbounded_channel::<String>();
 
     let (screen_w, screen_h) = get_screen_resolution();
 
@@ -236,7 +294,7 @@ async fn join_connection(
         screen_h,
     );
 
-    let token = client
+    let session = client
         .connect(&host_ip, 42426, &pin, incoming_tx, status_tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -246,6 +304,8 @@ async fn join_connection(
         .ok_or_else(|| "Failed to obtain client outbound channel".to_string())?;
 
     *state.client.write().await = Some(client);
+    *state.current_session.write().await = Some(session.clone());
+    let _ = app_handle.emit("session_started", &session);
 
     // Start Low-Level Mouse & Keyboard Hooks with client's outbound channel
     let (ui_tx, mut _ui_rx) = mpsc::unbounded_channel::<String>();
@@ -254,6 +314,30 @@ async fn join_connection(
     state.edge_monitor.start_monitor(outbound_tx.clone(), ui_tx);
     state.keyboard_hook.start_hook(outbound_tx.clone(), switch_back_tx);
     state.clipboard_watcher.start(outbound_tx.clone());
+
+    // Client status event listener (handles DISCONNECTED from host socket)
+    let session_slot = state.current_session.clone();
+    let edge_mon_status = state.edge_monitor.clone();
+    let kb_hook_status = state.keyboard_hook.clone();
+    let client_slot = state.client.clone();
+    let app_handle_status = app_handle.clone();
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(status_str) = status_rx.recv().await {
+            if status_str == "DISCONNECTED" {
+                log::info!("Disconnected from Host. Teardown active session immediately.");
+                *session_slot.write().await = None;
+                if let Some(mut cl) = client_slot.write().await.take() {
+                    cl.disconnect().await;
+                }
+                edge_mon_status.set_active_screen(ActiveScreen::Host).await;
+                kb_hook_status.update_active_screen(ActiveScreen::Host);
+                clear_keyboard_hook_sender();
+                clear_mouse_hook_sender();
+                let _ = app_handle_status.emit("session_ended", ());
+            }
+        }
+    });
 
     // Emergency recall listener
     let edge_mon_clone = state.edge_monitor.clone();
@@ -281,6 +365,9 @@ async fn join_connection(
     let edge_mon = state.edge_monitor.clone();
     let kb_hook = state.keyboard_hook.clone();
     let transfers = state.active_transfers.clone();
+    let session_msg = state.current_session.clone();
+    let client_msg = state.client.clone();
+    let app_handle_msg = app_handle.clone();
 
     tauri::async_runtime::spawn(async move {
         while let Some(msg) = incoming_rx.recv().await {
@@ -314,6 +401,18 @@ async fn join_connection(
                         m_sim.move_absolute(2, target_y);
                     }
                 }
+                NetworkMessage::Disconnect { reason } => {
+                    log::info!("Host disconnected: {}. Ending session.", reason);
+                    *session_msg.write().await = None;
+                    if let Some(mut cl) = client_msg.write().await.take() {
+                        cl.disconnect().await;
+                    }
+                    edge_mon.set_active_screen(ActiveScreen::Host).await;
+                    kb_hook.update_active_screen(ActiveScreen::Host);
+                    clear_keyboard_hook_sender();
+                    clear_mouse_hook_sender();
+                    let _ = app_handle_msg.emit("session_ended", ());
+                }
                 NetworkMessage::FileTransferInit(init) => {
                     let download_dir = dirs_fallback().join("AirDesk");
                     let _ = std::fs::create_dir_all(&download_dir);
@@ -333,7 +432,7 @@ async fn join_connection(
         }
     });
 
-    Ok(token)
+    Ok(session)
 }
 
 #[tauri::command]
@@ -374,7 +473,22 @@ async fn get_discovered_devices(state: tauri::State<'_, AppState>) -> Result<Vec
 }
 
 #[tauri::command]
-async fn disconnect_all(state: tauri::State<'_, AppState>) -> Result<(), String> {
+async fn disconnect_all(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let msg = NetworkMessage::Disconnect {
+        reason: "User requested disconnect".to_string(),
+    };
+
+    if let Some(srv) = state.server.read().await.as_ref() {
+        let _ = srv.send_message(msg.clone());
+    }
+    if let Some(cl) = state.client.read().await.as_ref() {
+        let _ = cl.send_message(msg);
+    }
+
+    *state.current_session.write().await = None;
     {
         let mut mgr = state.pin_manager.write().await;
         mgr.disconnect();
@@ -391,7 +505,10 @@ async fn disconnect_all(state: tauri::State<'_, AppState>) -> Result<(), String>
 
     state.edge_monitor.set_active_screen(ActiveScreen::Host).await;
     state.keyboard_hook.update_active_screen(ActiveScreen::Host);
+    clear_keyboard_hook_sender();
+    clear_mouse_hook_sender();
 
+    let _ = app_handle.emit("session_ended", ());
     Ok(())
 }
 
@@ -417,31 +534,50 @@ async fn set_screen_arrangement(
 
 #[tauri::command]
 async fn get_connection_status(state: tauri::State<'_, AppState>) -> Result<ConnectionStatus, String> {
+    let active_sess = state.current_session.read().await.clone();
     let pin_mgr = state.pin_manager.read().await;
     let pin_info = pin_mgr.get_current_pin_info();
-    let paired = pin_mgr.get_paired_device();
     let active = state.edge_monitor.get_active_screen().await;
 
-    let (mode, peer_name, peer_ip) = if let Some(dev) = paired {
-        ("connected".to_string(), Some(dev.device_name), Some(dev.ip))
-    } else if pin_info.is_some() {
-        ("hosting".to_string(), None, None)
-    } else if state.client.read().await.is_some() {
-        ("client".to_string(), None, None)
+    let active_screen_str = match active {
+        ActiveScreen::Host => "host".to_string(),
+        ActiveScreen::Client => "client".to_string(),
+    };
+
+    if let Some(sess) = active_sess {
+        return Ok(ConnectionStatus {
+            mode: "connected".to_string(),
+            session: Some(sess.clone()),
+            peer_device: Some(sess.peer_name),
+            peer_ip: Some(sess.peer_ip),
+            peer_os: Some(sess.peer_os),
+            peer_screen_width: Some(sess.peer_screen_width),
+            peer_screen_height: Some(sess.peer_screen_height),
+            role: Some(sess.role),
+            active_screen: active_screen_str,
+            pin: None,
+            pin_remaining_seconds: None,
+        });
+    }
+
+    let (mode, pin, remaining) = if let Some((p, s)) = pin_info {
+        ("hosting".to_string(), Some(p), Some(s))
     } else {
         ("idle".to_string(), None, None)
     };
 
     Ok(ConnectionStatus {
         mode,
-        peer_device: peer_name,
-        peer_ip,
-        active_screen: match active {
-            ActiveScreen::Host => "host".to_string(),
-            ActiveScreen::Client => "client".to_string(),
-        },
-        pin: pin_info.as_ref().map(|(p, _)| p.clone()),
-        pin_remaining_seconds: pin_info.map(|(_, s)| s),
+        session: None,
+        peer_device: None,
+        peer_ip: None,
+        peer_os: None,
+        peer_screen_width: None,
+        peer_screen_height: None,
+        role: None,
+        active_screen: active_screen_str,
+        pin,
+        pin_remaining_seconds: remaining,
     })
 }
 
@@ -502,6 +638,7 @@ fn main() {
         discovery,
         server: Arc::new(RwLock::new(None)),
         client: Arc::new(RwLock::new(None)),
+        current_session: Arc::new(RwLock::new(None)),
         edge_monitor: edge_mon,
         keyboard_hook,
         clipboard_watcher: clip_watcher,
