@@ -5,11 +5,13 @@ use aes_gcm::{
 use hkdf::Hkdf;
 use sha2::Sha256;
 
+#[allow(dead_code)]
 pub struct CipherSession {
     key: [u8; 32],
     nonce_counter: u64,
 }
 
+#[allow(dead_code)]
 impl CipherSession {
     /// Derive a shared 256-bit AES key from the 6-digit PIN and shared salt
     pub fn from_pin(pin: &str, salt: &[u8]) -> Self {
