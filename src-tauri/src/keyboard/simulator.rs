@@ -383,6 +383,11 @@ impl KeyboardSimulator {
                     let is_modifier_key = matches!(mac_code, 54..=62);
                     if is_modifier_key {
                         CGEventSetType(evt, 12 /* kCGEventFlagsChanged */);
+                    } else if let Some(ch) = key_char {
+                        let utf16: Vec<u16> = ch.encode_utf16().collect();
+                        if !utf16.is_empty() {
+                            CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
+                        }
                     }
                     CGEventPost(0 /* kCGHIDEventTap */, evt);
                     CFRelease(evt);

@@ -1,3 +1,8 @@
+lazy_static::lazy_static! {
+    static ref LAST_CLICK_TIME: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+    static ref CURRENT_CLICK_STATE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1);
+}
+
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 pub const AIRDESK_EXTRA_INFO: usize = 0xA12DE5C0;
@@ -112,7 +117,8 @@ impl MouseSimulator {
                 y: y as f64,
             };
             CGWarpMouseCursorPosition(pos);
-            let mouse_type = if self.is_left_down.load(Ordering::SeqCst) {
+            let is_dragging = self.is_left_down.load(Ordering::SeqCst);
+            let mouse_type = if is_dragging {
                 6 // kCGEventLeftMouseDragged
             } else if self.is_right_down.load(Ordering::SeqCst) {
                 7 // kCGEventRightMouseDragged
@@ -124,6 +130,10 @@ impl MouseSimulator {
             let move_evt = CGEventCreateMouseEvent(source, mouse_type, pos, mouse_btn);
             if !move_evt.is_null() {
                 CGEventSetIntegerValueField(move_evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                if is_dragging {
+                    CGEventSetIntegerValueField(move_evt, 1 /* kCGMouseEventClickState */, 1);
+                    CGEventSetIntegerValueField(move_evt, 2 /* kCGMouseEventButtonNumber */, 0);
+                }
                 CGEventPost(0 /* kCGHIDEventTap */, move_evt);
                 CFRelease(move_evt);
             }
@@ -176,6 +186,9 @@ impl MouseSimulator {
                 y: self.current_y.load(Ordering::SeqCst) as f64,
             };
 
+            // Warp hardware cursor so macOS WindowServer knows cursor is right at cur_pos
+            CGWarpMouseCursorPosition(cur_pos);
+
             let (mouse_type, mouse_btn) = match (button, is_down) {
                 (0, true) => (1 /* kCGEventLeftMouseDown */, 0 /* kCGMouseButtonLeft */),
                 (0, false) => (2 /* kCGEventLeftMouseUp */, 0),
@@ -186,10 +199,36 @@ impl MouseSimulator {
                 _ => return,
             };
 
+            // Detect double-click timing (<= 350ms)
+            let click_count: i64 = if button == 0 {
+                if is_down {
+                    let now = std::time::Instant::now();
+                    let count = if let Ok(mut last_t) = LAST_CLICK_TIME.lock() {
+                        let c = if let Some(t) = *last_t {
+                            if now.duration_since(t).as_millis() < 350 { 2 } else { 1 }
+                        } else {
+                            1
+                        };
+                        *last_t = Some(now);
+                        c
+                    } else {
+                        1
+                    };
+                    CURRENT_CLICK_STATE.store(count, Ordering::SeqCst);
+                    count
+                } else {
+                    CURRENT_CLICK_STATE.load(Ordering::SeqCst)
+                }
+            } else {
+                1
+            };
+
             let source = CGEventSourceCreate(1 /* kCGEventSourceStateHIDSystemState */);
             let evt = CGEventCreateMouseEvent(source, mouse_type, cur_pos, mouse_btn);
             if !evt.is_null() {
                 CGEventSetIntegerValueField(evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                CGEventSetIntegerValueField(evt, 1 /* kCGMouseEventClickState */, click_count);
+                CGEventSetIntegerValueField(evt, 2 /* kCGMouseEventButtonNumber */, mouse_btn as i64);
                 CGEventPost(0 /* kCGHIDEventTap */, evt);
                 CFRelease(evt);
             }
@@ -240,18 +279,35 @@ impl MouseSimulator {
         #[cfg(target_os = "macos")]
         unsafe {
             use macos::*;
+            let source = CGEventSourceCreate(1 /* kCGEventSourceStateHIDSystemState */);
             if delta_y != 0 {
                 let evt = CGEventCreateScrollWheelEvent(
-                    std::ptr::null_mut(),
-                    0, // kCGScrollEventUnitPixel
+                    source,
+                    1, // kCGScrollEventUnitLine (natural line scroll speed)
                     1,
-                    delta_y * 10,
+                    delta_y * 3,
                 );
                 if !evt.is_null() {
                     CGEventSetIntegerValueField(evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                     CGEventPost(0 /* kCGHIDEventTap */, evt);
                     CFRelease(evt);
                 }
+            }
+            if delta_x != 0 {
+                let evt = CGEventCreateScrollWheelEvent(
+                    source,
+                    1, // kCGScrollEventUnitLine
+                    2,
+                    delta_x * 3,
+                );
+                if !evt.is_null() {
+                    CGEventSetIntegerValueField(evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                    CGEventPost(0 /* kCGHIDEventTap */, evt);
+                    CFRelease(evt);
+                }
+            }
+            if !source.is_null() {
+                CFRelease(source);
             }
         }
     }

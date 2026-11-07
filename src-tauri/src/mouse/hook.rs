@@ -307,51 +307,46 @@ impl MouseEdgeMonitor {
                                                 let mut return_y_ratio = 0.5f32;
                                                 let mut return_edge = "right";
 
-                                                if !in_cooldown {
-                                                    if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
-                                                        let next_x = rpos.0 + dx as f32;
-                                                        let next_y = rpos.1 + dy as f32;
+                                                if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
+                                                    let next_x = rpos.0 + dx as f32;
+                                                    let next_y = rpos.1 + dy as f32;
 
+                                                    if !in_cooldown {
                                                         match arrangement {
                                                             ScreenArrangement::HostLeftClientRight => {
-                                                                // Returning from Client's left edge into Host's right edge
                                                                 if next_x <= 5.0 && dx < 0 {
                                                                     should_switch_back = true;
                                                                     return_edge = "right";
                                                                 }
                                                             }
                                                             ScreenArrangement::HostRightClientLeft => {
-                                                                // Returning from Client's right edge into Host's left edge
                                                                 if next_x >= rem_w - 5.0 && dx > 0 {
                                                                     should_switch_back = true;
                                                                     return_edge = "left";
                                                                 }
                                                             }
                                                             ScreenArrangement::HostTopClientBottom => {
-                                                                // Returning from Client's top edge into Host's bottom edge
                                                                 if next_y <= 5.0 && dy < 0 {
                                                                     should_switch_back = true;
                                                                     return_edge = "bottom";
                                                                 }
                                                             }
                                                             ScreenArrangement::HostBottomClientTop => {
-                                                                // Returning from Client's bottom edge into Host's top edge
                                                                 if next_y >= rem_h - 5.0 && dy > 0 {
                                                                     should_switch_back = true;
                                                                     return_edge = "top";
                                                                 }
                                                             }
                                                         }
-
-                                                        rpos.0 = next_x.clamp(0.0, rem_w);
-                                                        rpos.1 = next_y.clamp(0.0, rem_h);
-
-                                                        // Map return position back to Host coordinates including offsets!
-                                                        let host_y = (rpos.1 + (v_off * screen_h as f32)).clamp(20.0, (screen_h - 20) as f32);
-                                                        let host_x = (rpos.0 + (h_off * screen_w as f32)).clamp(20.0, (screen_w - 20) as f32);
-                                                        return_y_ratio = host_y / (screen_h as f32);
-                                                        return_x_ratio = host_x / (screen_w as f32);
                                                     }
+
+                                                    rpos.0 = next_x.clamp(0.0, rem_w);
+                                                    rpos.1 = next_y.clamp(0.0, rem_h);
+
+                                                    let host_y = (rpos.1 + (v_off * screen_h as f32)).clamp(20.0, (screen_h - 20) as f32);
+                                                    let host_x = (rpos.0 + (h_off * screen_w as f32)).clamp(20.0, (screen_w - 20) as f32);
+                                                    return_y_ratio = host_y / (screen_h as f32);
+                                                    return_x_ratio = host_x / (screen_w as f32);
                                                 }
 
                                                 if should_switch_back {
@@ -677,11 +672,11 @@ mod macos_mouse {
                             let mut return_y_ratio = 0.5f32;
                             let mut return_edge = "right";
 
-                            if !in_cooldown {
-                                if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
-                                    let next_x = rpos.0 + dx as f32;
-                                    let next_y = rpos.1 + dy as f32;
+                            if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
+                                let next_x = rpos.0 + dx as f32;
+                                let next_y = rpos.1 + dy as f32;
 
+                                if !in_cooldown {
                                     match arrangement {
                                         ScreenArrangement::HostLeftClientRight => {
                                             if next_x <= 5.0 && dx < 0 {
@@ -708,15 +703,15 @@ mod macos_mouse {
                                             }
                                         }
                                     }
-
-                                    rpos.0 = next_x.clamp(0.0, rem_w);
-                                    rpos.1 = next_y.clamp(0.0, rem_h);
-
-                                    let host_y = (rpos.1 + (v_off * screen_h as f32)).clamp(20.0, (screen_h - 20) as f32);
-                                    let host_x = (rpos.0 + (h_off * screen_w as f32)).clamp(20.0, (screen_w - 20) as f32);
-                                    return_y_ratio = host_y / (screen_h as f32);
-                                    return_x_ratio = host_x / (screen_w as f32);
                                 }
+
+                                rpos.0 = next_x.clamp(0.0, rem_w);
+                                rpos.1 = next_y.clamp(0.0, rem_h);
+
+                                let host_y = (rpos.1 + (v_off * screen_h as f32)).clamp(20.0, (screen_h - 20) as f32);
+                                let host_x = (rpos.0 + (h_off * screen_w as f32)).clamp(20.0, (screen_w - 20) as f32);
+                                return_y_ratio = host_y / (screen_h as f32);
+                                return_x_ratio = host_x / (screen_w as f32);
                             }
 
                             if should_switch_back {
@@ -758,11 +753,17 @@ mod macos_mouse {
                                 return std::ptr::null_mut();
                             }
 
+                            let (curr_rx, curr_ry) = if let Ok(rpos) = VIRTUAL_REMOTE_POS.read() {
+                                (rpos.0 as i32, rpos.1 as i32)
+                            } else {
+                                (0, 0)
+                            };
+
                             let _ = tx.send(NetworkMessage::MouseMove(MouseMovePayload {
                                 dx,
                                 dy,
-                                abs_x: None,
-                                abs_y: None,
+                                abs_x: Some(curr_rx),
+                                abs_y: Some(curr_ry),
                             }));
 
                             unsafe {

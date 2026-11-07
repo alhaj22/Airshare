@@ -35,11 +35,14 @@ pub fn clear_keyboard_hook_sender() {
 
 #[cfg(windows)]
 fn vk_to_char(vk_code: u32, shift: bool) -> Option<String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, MAPVK_VK_TO_CHAR};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, MapVirtualKeyW, MAPVK_VK_TO_CHAR};
+
+    let is_caps = (unsafe { GetKeyState(0x14 /* VK_CAPITAL */) } as u16 & 0x0001) != 0;
+    let is_upper = shift ^ is_caps;
 
     // Letters A-Z
     if (0x41..=0x5A).contains(&vk_code) {
-        let ch = if shift {
+        let ch = if is_upper {
             (vk_code as u8) as char
         } else {
             ((vk_code as u8) + 32) as char
@@ -61,6 +64,12 @@ fn vk_to_char(vk_code: u32, shift: bool) -> Option<String> {
         }
     }
 
+    // Numpad 0-9
+    if (0x60..=0x69).contains(&vk_code) {
+        let ch = ((vk_code - 0x60) as u8 + b'0') as char;
+        return Some(ch.to_string());
+    }
+
     // Common punctuation & control chars
     let sym = match (vk_code, shift) {
         (0x20, _) => " ",
@@ -75,6 +84,11 @@ fn vk_to_char(vk_code: u32, shift: bool) -> Option<String> {
         (0xDC, false) => "\\", (0xDC, true) => "|",
         (0xDD, false) => "]", (0xDD, true) => "}",
         (0xDE, false) => "'", (0xDE, true) => "\"",
+        (0x6A, _) => "*",
+        (0x6B, _) => "+",
+        (0x6D, _) => "-",
+        (0x6E, _) => ".",
+        (0x6F, _) => "/",
         (0x09, _) => "\t",
         (0x0D, _) => "\n",
         _ => {
