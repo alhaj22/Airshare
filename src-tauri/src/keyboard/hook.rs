@@ -199,7 +199,6 @@ impl KeyboardHookManager {
 
                             // If remote client is active: intercept keystrokes and send them over network
                             if active == ActiveScreen::Client && (is_down || is_up) {
-                                let mut sent = false;
                                 if let Ok(tx_guard) = KB_HOOK_TX.lock() {
                                     if let Some(tx) = &*tx_guard {
                                         let mut modifiers: u8 = 0;
@@ -232,11 +231,9 @@ impl KeyboardHookManager {
                                     }
                                 }
 
-                                if !sent {
-                                    // Channel closed / disconnected: immediately restore typing locally on Windows!
-                                    set_current_active_screen(ActiveScreen::Host);
-                                    return CallNextHookEx(0, n_code, w_param, l_param);
-                                }
+                                // Channel closed / disconnected: immediately restore typing locally on Windows!
+                                set_current_active_screen(ActiveScreen::Host);
+                                return CallNextHookEx(0, n_code, w_param, l_param);
                             }
                         }
 

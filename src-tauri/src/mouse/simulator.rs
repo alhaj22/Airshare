@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 pub const AIRDESK_EXTRA_INFO: usize = 0xA12DE5C0;
 #[allow(dead_code)]
@@ -52,6 +52,8 @@ pub struct MouseSimulator {
     _screen_height: u32,
     is_left_down: AtomicBool,
     is_right_down: AtomicBool,
+    current_x: AtomicI32,
+    current_y: AtomicI32,
 }
 
 impl MouseSimulator {
@@ -61,64 +63,21 @@ impl MouseSimulator {
             _screen_height: screen_height,
             is_left_down: AtomicBool::new(false),
             is_right_down: AtomicBool::new(false),
+            current_x: AtomicI32::new((screen_width / 2) as i32),
+            current_y: AtomicI32::new((screen_height / 2) as i32),
         }
     }
 
     pub fn move_relative(&self, dx: i32, dy: i32) {
-        #[cfg(windows)]
-        unsafe {
-            let mut input = INPUT {
-                r#type: INPUT_MOUSE,
-                Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
-                    mi: MOUSEINPUT {
-                        dx,
-                        dy,
-                        mouseData: 0,
-                        dwFlags: MOUSEEVENTF_MOVE,
-                        time: 0,
-                        dwExtraInfo: AIRDESK_EXTRA_INFO,
-                    },
-                },
-            };
-            SendInput(1, &mut input, std::mem::size_of::<INPUT>() as i32);
-        }
-
-        #[cfg(target_os = "macos")]
-        unsafe {
-            use macos::*;
-            let dummy = CGEventCreate(std::ptr::null_mut());
-            if !dummy.is_null() {
-                let loc = CGEventGetLocation(dummy);
-                CFRelease(dummy);
-                let new_pos = CGPoint {
-                    x: loc.x + dx as f64,
-                    y: loc.y + dy as f64,
-                };
-                CGWarpMouseCursorPosition(new_pos);
-                let mouse_type = if self.is_left_down.load(Ordering::SeqCst) {
-                    6 // kCGEventLeftMouseDragged
-                } else if self.is_right_down.load(Ordering::SeqCst) {
-                    7 // kCGEventRightMouseDragged
-                } else {
-                    5 // kCGEventMouseMoved
-                };
-                let mouse_btn = if self.is_right_down.load(Ordering::SeqCst) { 1 } else { 0 };
-                let move_evt = CGEventCreateMouseEvent(
-                    std::ptr::null_mut(),
-                    mouse_type,
-                    new_pos,
-                    mouse_btn,
-                );
-                if !move_evt.is_null() {
-                    CGEventSetIntegerValueField(move_evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
-                    CGEventPost(0 /* kCGHIDEventTap */, move_evt);
-                    CFRelease(move_evt);
-                }
-            }
-        }
+        let new_x = self.current_x.load(Ordering::SeqCst) + dx;
+        let new_y = self.current_y.load(Ordering::SeqCst) + dy;
+        self.move_absolute(new_x, new_y);
     }
 
     pub fn move_absolute(&self, x: i32, y: i32) {
+        self.current_x.store(x, Ordering::SeqCst);
+        self.current_y.store(y, Ordering::SeqCst);
+
         #[cfg(windows)]
         unsafe {
             let screen_w = GetSystemMetrics(SM_CXSCREEN) as f64;
@@ -207,13 +166,9 @@ impl MouseSimulator {
         #[cfg(target_os = "macos")]
         unsafe {
             use macos::*;
-            let dummy = CGEventCreate(std::ptr::null_mut());
-            let loc = if !dummy.is_null() {
-                let l = CGEventGetLocation(dummy);
-                CFRelease(dummy);
-                l
-            } else {
-                CGPoint { x: 0.0, y: 0.0 }
+            let cur_pos = CGPoint {
+                x: self.current_x.load(Ordering::SeqCst) as f64,
+                y: self.current_y.load(Ordering::SeqCst) as f64,
             };
 
             let (mouse_type, mouse_btn) = match (button, is_down) {
@@ -226,7 +181,7 @@ impl MouseSimulator {
                 _ => return,
             };
 
-            let evt = CGEventCreateMouseEvent(std::ptr::null_mut(), mouse_type, loc, mouse_btn);
+            let evt = CGEventCreateMouseEvent(std::ptr::null_mut(), mouse_type, cur_pos, mouse_btn);
             if !evt.is_null() {
                 CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                 CGEventPost(0 /* kCGHIDEventTap */, evt);

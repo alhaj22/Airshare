@@ -393,11 +393,17 @@ impl MouseEdgeMonitor {
                                                     return 1;
                                                 }
 
+                                                let (curr_rx, curr_ry) = if let Ok(rpos) = VIRTUAL_REMOTE_POS.read() {
+                                                    (rpos.0 as i32, rpos.1 as i32)
+                                                } else {
+                                                    (0, 0)
+                                                };
+
                                                 let _ = tx.send(NetworkMessage::MouseMove(MouseMovePayload {
                                                     dx,
                                                     dy,
-                                                    abs_x: None,
-                                                    abs_y: None,
+                                                    abs_x: Some(curr_rx),
+                                                    abs_y: Some(curr_ry),
                                                 }));
 
                                                 SetCursorPos(center_x, center_y);

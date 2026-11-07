@@ -330,52 +330,44 @@ impl KeyboardSimulator {
             use macos::*;
             let modifiers = _modifiers;
             let mac_code = win_vk_to_mac_key(vk_code);
-            let code_to_use = if mac_code != 0xFFFF { mac_code } else { 0 };
 
-            // Using NULL source provides standard system event synthesis without needing root!
-            let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), code_to_use, is_down);
-            if !evt.is_null() {
-                // Tag with AIRDESK signature to avoid re-interception by local tap
-                CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+            let mut cg_flags: u64 = 0;
+            if (modifiers & 1) != 0 { cg_flags |= 0x00020000; } // Shift
+            if (modifiers & 2) != 0 { cg_flags |= 0x00100000; } // Command (⌘)
+            if (modifiers & 4) != 0 { cg_flags |= 0x00080000; } // Option (⌥)
+            if (modifiers & 8) != 0 { cg_flags |= 0x00040000; } // Control (^)
 
-                // Map Windows modifier bitmask to macOS CoreGraphics CGEventFlags:
-                let mut cg_flags: u64 = 0;
-                if (modifiers & 1) != 0 {
-                    cg_flags |= 0x00020000; // Shift
-                }
-                if (modifiers & 2) != 0 {
-                    cg_flags |= 0x00100000; // Command (⌘)
-                }
-                if (modifiers & 4) != 0 {
-                    cg_flags |= 0x00080000; // Option (⌥)
-                }
-                if (modifiers & 8) != 0 {
-                    cg_flags |= 0x00040000; // Control (^)
-                }
-
-                if cg_flags != 0 {
-                    CGEventSetFlags(evt, cg_flags);
-                }
-
-                // On macOS, modifier keys MUST generate kCGEventFlagsChanged (12)
-                let is_modifier_key = matches!(mac_code, 54..=62);
-                if is_modifier_key {
-                    CGEventSetType(evt, 12 /* kCGEventFlagsChanged */);
-                }
-
-                // For printable text characters on key down without Cmd/Ctrl shortcuts, set Unicode directly
-                if is_down && !is_modifier_key && (modifiers & 6 == 0) {
-                    if let Some(ch) = key_char {
-                        let utf16: Vec<u16> = ch.encode_utf16().collect();
-                        if !utf16.is_empty() {
-                            CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
-                        }
+            if mac_code != 0xFFFF {
+                let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), mac_code, is_down);
+                if !evt.is_null() {
+                    CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                    if cg_flags != 0 {
+                        CGEventSetFlags(evt, cg_flags);
                     }
+                    let is_modifier_key = matches!(mac_code, 54..=62);
+                    if is_modifier_key {
+                        CGEventSetType(evt, 12 /* kCGEventFlagsChanged */);
+                    }
+                    // Post to both HID System Tap (0) and Session Tap (1) to guarantee delivery
+                    CGEventPost(0 /* kCGHIDEventTap */, evt);
+                    CGEventPost(1 /* kCGSessionEventTap */, evt);
+                    CFRelease(evt);
                 }
-
-                // Post directly to Session Event Tap for active window input delivery
-                CGEventPost(1 /* kCGSessionEventTap */, evt);
-                CFRelease(evt);
+            } else if let Some(ch) = key_char {
+                let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), 0, is_down);
+                if !evt.is_null() {
+                    CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                    if cg_flags != 0 {
+                        CGEventSetFlags(evt, cg_flags);
+                    }
+                    let utf16: Vec<u16> = ch.encode_utf16().collect();
+                    if !utf16.is_empty() {
+                        CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
+                    }
+                    CGEventPost(0 /* kCGHIDEventTap */, evt);
+                    CGEventPost(1 /* kCGSessionEventTap */, evt);
+                    CFRelease(evt);
+                }
             }
         }
     }

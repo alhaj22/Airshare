@@ -263,7 +263,11 @@ async fn create_connection_pin(
                     m_sim.move_absolute(entry_x, entry_y);
                 }
                 NetworkMessage::MouseMove(p) => {
-                    m_sim.move_relative(p.dx, p.dy);
+                    if let (Some(x), Some(y)) = (p.abs_x, p.abs_y) {
+                        m_sim.move_absolute(x, y);
+                    } else {
+                        m_sim.move_relative(p.dx, p.dy);
+                    }
                 }
                 NetworkMessage::MouseButton(p) => {
                     m_sim.button_event(p.button, p.state == 1);
@@ -413,7 +417,11 @@ async fn join_connection(
         while let Some(msg) = incoming_rx.recv().await {
             match msg {
                 NetworkMessage::MouseMove(p) => {
-                    m_sim.move_relative(p.dx, p.dy);
+                    if let (Some(x), Some(y)) = (p.abs_x, p.abs_y) {
+                        m_sim.move_absolute(x, y);
+                    } else {
+                        m_sim.move_relative(p.dx, p.dy);
+                    }
                 }
                 NetworkMessage::MouseButton(p) => {
                     m_sim.button_event(p.button, p.state == 1);
