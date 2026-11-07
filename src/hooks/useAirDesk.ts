@@ -17,12 +17,13 @@ export function useAirDesk() {
   const [screenArrangement, setScreenArrangement] =
     useState<ScreenArrangementType>('host_left_client_right');
 
-  // Feature Toggles
-  const [mouseSharing, setMouseSharing] = useState<boolean>(true);
-  const [keyboardSharing, setKeyboardSharing] = useState<boolean>(true);
-  const [clipboardSharing, setClipboardSharing] = useState<boolean>(true);
+  // Feature toggles
+  const [mouseSharing, setMouseSharing] = useState(true);
+  const [keyboardSharing, setKeyboardSharing] = useState(true);
+  const [clipboardSharing, setClipboardSharing] = useState(true);
+  const [keyboardMapping, setKeyboardMapping] = useState(true);
 
-  // Status message / toast
+  // Toast notification
   const [notification, setNotification] = useState<{
     text: string;
     type: 'info' | 'success' | 'error';
@@ -36,12 +37,12 @@ export function useAirDesk() {
     []
   );
 
-  // Load initial system info
+  // Load system info once
   useEffect(() => {
-    api.getSystemInfo().then(setSystemInfo);
+    api.getSystemInfo().then(setSystemInfo).catch(console.error);
   }, []);
 
-  // Reactive Event Listeners for Session Start and End
+  // Reactive event listeners for session start/end
   useEffect(() => {
     let unlistenStart: (() => void) | undefined;
     let unlistenEnd: (() => void) | undefined;
@@ -52,37 +53,32 @@ export function useAirDesk() {
         session,
         peer_device: session.peer_name,
         peer_ip: session.peer_ip,
-        peer_os: (session.peer_os.toLowerCase().includes('mac')
+        peer_os: session.peer_os.toLowerCase().includes('mac')
           ? 'macos'
           : session.peer_os.toLowerCase().includes('win')
           ? 'windows'
-          : 'linux'),
+          : 'linux',
+        peer_screen_width: session.peer_screen_width,
+        peer_screen_height: session.peer_screen_height,
         role: session.role,
         active_screen: 'host',
       });
-      showNotification(`Session connected with ${session.peer_name}!`, 'success');
-    }).then((unsub) => {
-      unlistenStart = unsub;
-    });
+      showNotification(`Connected with ${session.peer_name}!`, 'success');
+    }).then((unsub) => { unlistenStart = unsub; });
 
     api.onSessionEnded(() => {
-      setStatus({
-        mode: 'idle',
-        active_screen: 'host',
-      });
+      setStatus({ mode: 'idle', active_screen: 'host' });
       autoConnectAttempted.current = false;
-      showNotification('Session ended. Keyboard and mouse sharing stopped.', 'info');
-    }).then((unsub) => {
-      unlistenEnd = unsub;
-    });
+      showNotification('Session ended. Input sharing stopped.', 'info');
+    }).then((unsub) => { unlistenEnd = unsub; });
 
     return () => {
-      if (unlistenStart) unlistenStart();
-      if (unlistenEnd) unlistenEnd();
+      unlistenStart?.();
+      unlistenEnd?.();
     };
   }, [showNotification]);
 
-  // Poll connection status and discovery
+  // Poll connection status and discovered devices every 1.5s
   useEffect(() => {
     const update = async () => {
       try {
@@ -102,27 +98,30 @@ export function useAirDesk() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-Connect for trusted devices on local Wi-Fi
-  const autoConnectAttempted = useRef<boolean>(false);
-
+  // Auto-connect to discovered host
+  const autoConnectAttempted = useRef(false);
   useEffect(() => {
-    if (status.mode === 'connected' || status.mode === 'client' || autoConnectAttempted.current) {
-      return;
-    }
+    if (
+      status.mode === 'connected' ||
+      status.mode === 'client' ||
+      autoConnectAttempted.current
+    ) return;
 
     if (discoveredDevices.length > 0 && status.mode === 'idle') {
       const hostDev = discoveredDevices.find((d) => d.is_host);
       if (hostDev) {
         autoConnectAttempted.current = true;
-        showNotification(`Auto-connecting with ${hostDev.device_name}...`, 'info');
+        showNotification(`Auto-connecting to ${hostDev.device_name}…`, 'info');
         joinHost(hostDev.ip, 'auto_connect').catch(() => {
           autoConnectAttempted.current = false;
         });
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [discoveredDevices, status.mode]);
 
-  // Action: Create connection as Host
+  // ─── Actions ───────────────────────────────────────────────
+
   const startHost = async () => {
     try {
       const res = await api.createConnectionPin();
@@ -132,66 +131,61 @@ export function useAirDesk() {
         pin: res.pin,
         pin_remaining_seconds: res.expires_in_seconds,
       }));
-      showNotification(`6-Digit Key Generated: ${res.pin}`, 'success');
+      showNotification(`Key generated: ${res.pin}`, 'success');
     } catch (err: unknown) {
       showNotification(`Failed to host: ${(err as Error).message}`, 'error');
     }
   };
 
-  // Action: Join connection as Client
   const joinHost = async (hostIp: string, pin: string) => {
     try {
-      showNotification('Verifying 6-Digit Key and connecting...', 'info');
+      showNotification('Connecting…', 'info');
       const session = await api.joinConnection(hostIp, pin);
       setStatus({
         mode: 'connected',
         session,
         peer_device: session.peer_name,
         peer_ip: session.peer_ip,
-        peer_os: (session.peer_os.toLowerCase().includes('mac')
+        peer_os: session.peer_os.toLowerCase().includes('mac')
           ? 'macos'
           : session.peer_os.toLowerCase().includes('win')
           ? 'windows'
-          : 'linux'),
+          : 'linux',
+        peer_screen_width: session.peer_screen_width,
+        peer_screen_height: session.peer_screen_height,
         role: session.role,
         active_screen: 'host',
       });
-      showNotification(`Connected with ${session.peer_name}! Mouse and keyboard sharing active.`, 'success');
+      showNotification(`Connected with ${session.peer_name}! Mouse & keyboard sharing active.`, 'success');
     } catch (err: unknown) {
       showNotification(`Connection failed: ${(err as Error).message}`, 'error');
       throw err;
     }
   };
 
-  // Action: Disconnect
   const disconnect = async () => {
     try {
       await api.disconnectAll();
-      setStatus({
-        mode: 'idle',
-        active_screen: 'host',
-      });
+      setStatus({ mode: 'idle', active_screen: 'host' });
       showNotification('Disconnected', 'info');
     } catch (err: unknown) {
       showNotification(`Failed to disconnect: ${(err as Error).message}`, 'error');
     }
   };
 
-  // Action: Switch arrangement
   const updateArrangement = async (arr: ScreenArrangementType, vOffset?: number) => {
     setScreenArrangement(arr);
     await api.setScreenArrangement(arr, vOffset);
   };
 
-  // Cursor switch (switches control to remote computer or back to local computer)
   const toggleActiveScreen = async () => {
     try {
       const next = await api.toggleActiveScreen();
       setStatus((prev) => ({ ...prev, active_screen: next }));
       showNotification(
         next === 'client'
-          ? 'Switched control to remote device! Move mouse or type.'
-          : 'Returned control to this laptop.',
+          ? 'Switched to remote device. Move mouse or type.'
+          : 'Returned to this computer.',
         'info'
       );
     } catch (err: unknown) {
@@ -199,7 +193,6 @@ export function useAirDesk() {
     }
   };
 
-  // Simulate remote connection (for web preview)
   const simulatePeerConnection = (device: DiscoveredDevice) => {
     api.simulatePeerConnect(device.device_name, device.os, device.ip);
     setStatus({
@@ -223,6 +216,8 @@ export function useAirDesk() {
     setKeyboardSharing,
     clipboardSharing,
     setClipboardSharing,
+    keyboardMapping,
+    setKeyboardMapping,
     notification,
     startHost,
     joinHost,

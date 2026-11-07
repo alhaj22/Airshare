@@ -1,95 +1,112 @@
-import React, { useState } from 'react';
-import { ShieldAlert, Check, Copy, X } from 'lucide-react';
+import React from 'react';
+import { X, Apple, Shield, Terminal } from 'lucide-react';
 
 interface MacPermissionsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const MacPermissionsModal: React.FC<MacPermissionsModalProps> = ({
-  isOpen,
-  onClose,
-}) => {
-  const [copied, setCopied] = useState(false);
-
+export const MacPermissionsModal: React.FC<MacPermissionsModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
-  const terminalCommand = 'tccutil reset Accessibility com.airdesk.app';
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(terminalCommand);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const steps = [
+    {
+      num: 1,
+      title: 'Open System Settings',
+      desc: 'Go to Apple Menu → System Settings (or System Preferences on older macOS)',
+      icon: <Apple className="h-4 w-4" />,
+    },
+    {
+      num: 2,
+      title: 'Privacy & Security → Accessibility',
+      desc: 'Scroll down in the left sidebar to Privacy & Security, then click Accessibility',
+      icon: <Shield className="h-4 w-4" />,
+    },
+    {
+      num: 3,
+      title: 'Enable AirDesk',
+      desc: 'Click the + button, navigate to the AirDesk app, and toggle it ON. Enter your password if prompted.',
+      icon: <Terminal className="h-4 w-4" />,
+    },
+  ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
-        >
-          <X className="h-5 w-5" />
-        </button>
-
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/30">
-            <ShieldAlert className="h-6 w-6" />
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-white">
-              macOS Accessibility Permissions Guide
-            </h3>
-            <p className="text-xs text-slate-400">
-              Required on MacBook to receive mouse & keyboard controls
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-3 text-xs leading-relaxed text-slate-300">
-          <p>
-            Apple macOS requires explicit security permission for applications to simulate cursor movements and keyboard clicks:
-          </p>
-
-          <ol className="list-decimal space-y-2 pl-4 text-slate-300">
-            <li>
-              Open <strong className="text-white">System Settings</strong> on your MacBook.
-            </li>
-            <li>
-              Navigate to <strong className="text-white">Privacy & Security → Accessibility</strong>.
-            </li>
-            <li>
-              Toggle the switch next to <strong className="text-cyan-400">AirDesk</strong> to <strong className="text-emerald-400">ON</strong>.
-            </li>
-            <li>
-              Also check <strong className="text-white">Privacy & Security → Input Monitoring</strong> and allow AirDesk.
-            </li>
-          </ol>
-
-          <div className="mt-4 rounded-xl border border-white/5 bg-slate-950 p-3">
-            <span className="text-[11px] font-semibold uppercase text-slate-400 block mb-1">
-              Terminal quick reset (if needed):
-            </span>
-            <div className="flex items-center justify-between rounded-lg bg-slate-900 px-3 py-2 font-mono text-[11px] text-purple-300">
-              <code>{terminalCommand}</code>
-              <button
-                onClick={handleCopy}
-                className="ml-2 flex items-center gap-1 text-slate-400 hover:text-white cursor-pointer"
-              >
-                {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-              </button>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}
+      onClick={onClose}
+    >
+      <div
+        className="card w-full max-w-md p-6 fade-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div
+              className="flex h-9 w-9 items-center justify-center rounded-xl"
+              style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.2)' }}
+            >
+              <Apple className="h-5 w-5" style={{ color: '#a78bfa' }} />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold" style={{ color: '#f1f5f9' }}>macOS Permissions Setup</h2>
+              <p className="text-xs" style={{ color: '#64748b' }}>Required for input capture to work</p>
             </div>
           </div>
-        </div>
-
-        <div className="mt-6 flex justify-end">
           <button
             onClick={onClose}
-            className="rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-2 text-xs font-semibold text-white shadow-md hover:from-cyan-400 hover:to-blue-500 transition cursor-pointer"
+            className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors cursor-pointer"
+            style={{ color: '#475569' }}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = '#94a3b8')}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = '#475569')}
           >
-            I Understand & Granted
+            <X className="h-4 w-4" />
           </button>
         </div>
+
+        {/* Important warning */}
+        <div
+          className="rounded-lg p-3 mb-5 text-xs"
+          style={{
+            background: 'rgba(245,158,11,0.08)',
+            border: '1px solid rgba(245,158,11,0.2)',
+            color: '#fcd34d',
+          }}
+        >
+          ⚠️ AirDesk requires <strong>Accessibility permission</strong> on macOS to capture and simulate keyboard/mouse input. Without this, input sharing will not work.
+        </div>
+
+        {/* Steps */}
+        <div className="space-y-4">
+          {steps.map((step) => (
+            <div key={step.num} className="flex gap-4">
+              <div
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                style={{
+                  background: 'rgba(14,165,233,0.12)',
+                  border: '1px solid rgba(14,165,233,0.2)',
+                  color: '#38bdf8',
+                }}
+              >
+                {step.num}
+              </div>
+              <div>
+                <p className="text-sm font-semibold mb-0.5" style={{ color: '#e2e8f0' }}>
+                  {step.title}
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: '#64748b' }}>
+                  {step.desc}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Done button */}
+        <button onClick={onClose} className="btn-primary w-full mt-6">
+          Got it, done!
+        </button>
       </div>
     </div>
   );

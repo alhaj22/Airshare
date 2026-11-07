@@ -1,8 +1,279 @@
 @import "tailwindcss";
 
 @layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  :root {
+    --color-bg-primary: #0a0d12;
+    --color-bg-secondary: #0f1319;
+    --color-bg-card: #131720;
+    --color-bg-elevated: #1a2030;
+    --color-border: rgba(255,255,255,0.07);
+    --color-border-hover: rgba(255,255,255,0.14);
+    --color-accent: #0ea5e9;
+    --color-accent-glow: rgba(14,165,233,0.2);
+    --color-success: #10b981;
+    --color-warning: #f59e0b;
+    --color-danger: #ef4444;
+    --color-text-primary: #f1f5f9;
+    --color-text-secondary: #94a3b8;
+    --color-text-muted: #475569;
+  }
+
+  html {
+    @apply h-full;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
-    @apply bg-slate-950 text-slate-100 antialiased overflow-x-hidden;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    @apply h-full overflow-hidden;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  #root {
+    @apply h-full;
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.1);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.2);
+  }
+
+  ::selection {
+    background: rgba(14,165,233,0.35);
+    color: #fff;
+  }
+}
+
+@layer components {
+  /* ───── Button Variants ───── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 cursor-pointer select-none;
+    background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+    color: #fff;
+    box-shadow: 0 1px 3px rgba(14,165,233,0.4), 0 0 0 1px rgba(255,255,255,0.08);
+  }
+  .btn-primary:hover {
+    background: linear-gradient(135deg, #38bdf8 0%, #3b82f6 100%);
+    box-shadow: 0 4px 16px rgba(14,165,233,0.35), 0 0 0 1px rgba(255,255,255,0.12);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(14,165,233,0.3);
+  }
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 cursor-pointer select-none;
+    background: var(--color-bg-elevated);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+  }
+  .btn-secondary:hover {
+    background: rgba(255,255,255,0.06);
+    color: var(--color-text-primary);
+    border-color: var(--color-border-hover);
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 cursor-pointer select-none;
+    background: rgba(239,68,68,0.12);
+    color: #fca5a5;
+    border: 1px solid rgba(239,68,68,0.3);
+  }
+  .btn-danger:hover {
+    background: rgba(239,68,68,0.2);
+    color: #fff;
+    border-color: rgba(239,68,68,0.5);
+  }
+
+  .btn-success {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 cursor-pointer select-none;
+    background: rgba(16,185,129,0.15);
+    color: #6ee7b7;
+    border: 1px solid rgba(16,185,129,0.3);
+  }
+  .btn-success:hover {
+    background: rgba(16,185,129,0.25);
+    color: #fff;
+  }
+
+  /* ───── Card ───── */
+  .card {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    @apply rounded-xl;
+  }
+  .card-elevated {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    @apply rounded-xl;
+  }
+
+  /* ───── Input ───── */
+  .input-field {
+    @apply w-full rounded-lg px-3 py-2 text-sm font-mono transition-all duration-150 outline-none;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    caret-color: var(--color-accent);
+  }
+  .input-field::placeholder {
+    color: var(--color-text-muted);
+  }
+  .input-field:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-glow);
+  }
+
+  /* ───── Badge ───── */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .badge-success {
+    background: rgba(16,185,129,0.15);
+    color: #6ee7b7;
+    border: 1px solid rgba(16,185,129,0.25);
+  }
+  .badge-warning {
+    background: rgba(245,158,11,0.15);
+    color: #fcd34d;
+    border: 1px solid rgba(245,158,11,0.25);
+  }
+  .badge-info {
+    background: rgba(14,165,233,0.15);
+    color: #7dd3fc;
+    border: 1px solid rgba(14,165,233,0.25);
+  }
+  .badge-muted {
+    background: rgba(255,255,255,0.06);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+  }
+
+  /* ───── Toggle Switch ───── */
+  .toggle-track {
+    @apply relative inline-flex h-5 w-9 cursor-pointer rounded-full transition-colors duration-200;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--color-border);
+  }
+  .toggle-track.active {
+    background: rgba(14,165,233,0.4);
+    border-color: var(--color-accent);
+  }
+  .toggle-thumb {
+    @apply absolute top-0.5 left-0.5 h-4 w-4 rounded-full transition-transform duration-200 shadow-sm;
+    background: var(--color-text-muted);
+  }
+  .toggle-track.active .toggle-thumb {
+    transform: translateX(16px);
+    background: var(--color-accent);
+  }
+
+  /* ───── Screen Monitor Box ───── */
+  .monitor-box {
+    @apply relative rounded-lg flex flex-col items-center justify-between p-3 select-none;
+    border: 1.5px solid rgba(255,255,255,0.1);
+    background: linear-gradient(145deg, #1a2030 0%, #131720 100%);
+    min-height: 100px;
+  }
+  .monitor-box.host-active {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 1px rgba(14,165,233,0.3), 0 4px 24px rgba(14,165,233,0.15);
+  }
+  .monitor-box.client-active {
+    border-color: var(--color-success);
+    box-shadow: 0 0 0 1px rgba(16,185,129,0.3), 0 4px 24px rgba(16,185,129,0.15);
+  }
+
+  /* ───── Dot pulse ───── */
+  .dot-pulse {
+    @apply h-2 w-2 rounded-full;
+    animation: dot-pulse-anim 2s ease-in-out infinite;
+  }
+  @keyframes dot-pulse-anim {
+    0%, 100% { opacity: 0.4; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+
+  /* ───── Fade in ───── */
+  .fade-in {
+    animation: fadeIn 0.25s ease-out forwards;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ───── Slide down ───── */
+  .slide-down {
+    animation: slideDown 0.2s ease-out forwards;
+  }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ───── PIN digit box ───── */
+  .pin-digit {
+    @apply flex h-14 w-11 items-center justify-center rounded-lg font-mono text-2xl font-black;
+    background: var(--color-bg-primary);
+    border: 1.5px solid rgba(14,165,233,0.3);
+    color: #38bdf8;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.5), 0 0 0 1px rgba(14,165,233,0.1);
+    text-shadow: 0 0 20px rgba(14,165,233,0.5);
+  }
+
+  /* ───── Sidebar nav item ───── */
+  .nav-item {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150 cursor-pointer select-none w-full;
+    color: var(--color-text-muted);
+  }
+  .nav-item:hover {
+    background: rgba(255,255,255,0.05);
+    color: var(--color-text-secondary);
+  }
+  .nav-item.active {
+    background: rgba(14,165,233,0.12);
+    color: var(--color-accent);
+    border-left: 2px solid var(--color-accent);
+  }
+  .nav-item.active svg {
+    color: var(--color-accent);
+  }
+
+  /* ───── Stat block ───── */
+  .stat-row {
+    @apply flex items-center justify-between py-2;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .stat-row:last-child {
+    border-bottom: none;
   }
 }

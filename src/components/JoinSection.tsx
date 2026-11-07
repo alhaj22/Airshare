@@ -1,256 +1,217 @@
-import React, { useRef, useState } from 'react';
-import { LogIn, Wifi, Laptop, Monitor, Sparkles, Loader2, GripVertical } from 'lucide-react';
-import type { DiscoveredDevice } from '../types';
+import React, { useState } from 'react';
+import { Search, Zap, Wifi, ArrowRight, Loader2, Globe } from 'lucide-react';
+import type { ConnectionStatus, DiscoveredDevice } from '../types';
 
 interface JoinSectionProps {
+  status: ConnectionStatus;
   discoveredDevices: DiscoveredDevice[];
   onJoin: (hostIp: string, pin: string) => Promise<void>;
-  onSimulateConnect?: (dev: DiscoveredDevice) => void;
-  isConnecting?: boolean;
+  onSimulateConnect?: (device: DiscoveredDevice) => void;
+}
+
+function getOsLabel(os: string) {
+  const o = os.toLowerCase();
+  if (o.includes('mac')) return { icon: '🍎', label: 'macOS' };
+  if (o.includes('win')) return { icon: '🪟', label: 'Windows' };
+  return { icon: '🐧', label: 'Linux' };
 }
 
 export const JoinSection: React.FC<JoinSectionProps> = ({
+  status,
   discoveredDevices,
   onJoin,
   onSimulateConnect,
 }) => {
-  const [pinDigits, setPinDigits] = useState<string[]>(['', '', '', '', '', '']);
-  const [selectedIp, setSelectedIp] = useState<string>('');
-  const [manualIp, setManualIp] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [hostIp, setHostIp] = useState('');
+  const [pin, setPin] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const isConnected = status.mode === 'connected';
+  const isClient = status.role === 'client';
 
-  const handleDigitChange = (index: number, val: string) => {
-    // Only accept numeric digits
-    const cleaned = val.replace(/\D/g, '');
-    if (!cleaned && val !== '') return;
+  const handleJoin = async (ip?: string, autoPin?: string) => {
+    const targetIp = ip || hostIp.trim();
+    const targetPin = autoPin || pin.trim();
 
-    const newDigits = [...pinDigits];
-    newDigits[index] = cleaned.slice(-1);
-    setPinDigits(newDigits);
-    setErrorMsg(null);
-
-    // Auto-advance to next input
-    if (cleaned && index < 5) {
-      inputRefs.current[index + 1]?.focus();
+    if (!targetIp) {
+      setError('Enter the host IP address');
+      return;
     }
-  };
-
-  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !pinDigits[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
-  };
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    if (!pasted) return;
-
-    const newDigits = [...pinDigits];
-    for (let i = 0; i < 6; i++) {
-      newDigits[i] = pasted[i] || '';
-    }
-    setPinDigits(newDigits);
-    const lastFilled = Math.min(pasted.length, 5);
-    inputRefs.current[lastFilled]?.focus();
-  };
-
-  const handleConnect = async () => {
-    const fullPin = pinDigits.join('');
-    if (fullPin.length !== 6) {
-      setErrorMsg('Please enter all 6 digits of the Connection Key');
+    if (!targetPin && targetPin !== 'auto_connect') {
+      setError('Enter the 6-digit pairing key');
       return;
     }
 
-    const targetIp = selectedIp || manualIp || '192.168.1.102';
+    setError('');
     setLoading(true);
-    setErrorMsg(null);
-
     try {
-      await onJoin(targetIp, fullPin);
+      await onJoin(targetIp, targetPin);
     } catch (err: unknown) {
-      setErrorMsg((err as Error).message || 'Failed to connect');
+      setError((err as Error).message || 'Connection failed');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleDeviceClick = (device: DiscoveredDevice) => {
+    if (device.is_host) {
+      // Auto-connect to host device
+      onJoin(device.ip, 'auto_connect').catch(() => {});
+    } else if (onSimulateConnect) {
+      onSimulateConnect(device);
+    }
+  };
+
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 shadow-xl backdrop-blur-md">
-      <div className="flex items-center gap-3 pb-4 border-b border-white/10">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-          <LogIn className="h-5 w-5" />
+    <div className="card p-5 h-full flex flex-col">
+      {/* Card Header */}
+      <div
+        className="flex items-center gap-3 pb-4 mb-4"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
+      >
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-lg"
+          style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.2)' }}
+        >
+          <Globe className="h-4 w-4" style={{ color: '#10b981' }} />
         </div>
         <div>
-          <h2 className="text-base font-semibold text-white">Join Connection</h2>
-          <p className="text-xs text-slate-400">
-            Connect to Host laptop using the 6-digit key
+          <h2 className="text-sm font-semibold" style={{ color: '#f1f5f9' }}>Join Host</h2>
+          <p className="text-xs" style={{ color: '#64748b' }}>
+            Enter host details or select a discovered device
           </p>
         </div>
+
+        {isConnected && isClient && (
+          <span className="ml-auto badge badge-success">
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'dot-pulse-anim 2s infinite', marginRight: '4px' }} />
+            Active
+          </span>
+        )}
       </div>
 
-      <div className="mt-5 space-y-5">
-        {/* Discovered Devices on Wi-Fi */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Discovered Devices on Wi-Fi
-            </span>
-            <span className="flex items-center gap-1 text-[11px] text-cyan-400">
-              <Wifi className="h-3 w-3" />
-              <span>Auto-detect active</span>
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            {discoveredDevices.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-800 p-4 text-center text-xs text-slate-500">
-                Scanning local Wi-Fi for nearby AirDesk laptops...
-              </div>
-            ) : (
-              discoveredDevices.map((dev) => (
-                <div
-                  key={dev.device_id}
-                  draggable={true}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('application/json', JSON.stringify(dev));
-                    e.dataTransfer.effectAllowed = 'copyMove';
-                  }}
-                  onClick={() => setSelectedIp(dev.ip)}
-                  title="Drag onto the screen layout canvas below, or click to select"
-                  className={`flex cursor-grab active:cursor-grabbing items-center justify-between rounded-xl border p-3 transition select-none ${
-                    selectedIp === dev.ip
-                      ? 'border-indigo-500/60 bg-indigo-500/10'
-                      : 'border-white/5 bg-slate-950/40 hover:border-white/15'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <GripVertical className="h-4 w-4 text-slate-500 shrink-0" />
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800 text-slate-300">
-                      {dev.os === 'macos' ? (
-                        <Laptop className="h-4 w-4 text-purple-400" />
-                      ) : (
-                        <Monitor className="h-4 w-4 text-blue-400" />
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-white">
-                          {dev.device_name}
-                        </span>
-                        {dev.is_host && (
-                          <span className="rounded bg-cyan-500/20 px-1.5 py-0.5 text-[10px] font-medium text-cyan-300">
-                            Host Ready
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[11px] font-mono text-slate-400">
-                        {dev.ip}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedIp(dev.ip);
-                        if (onSimulateConnect) {
-                          onSimulateConnect(dev);
-                        } else {
-                          onJoin(dev.ip, 'auto_connect');
-                        }
-                      }}
-                      title="Pair instantly with this device"
-                      className="flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-slate-300 cursor-pointer border border-white/5"
-                    >
-                      <Sparkles className="h-3 w-3 text-amber-400" />
-                      <span>Pair</span>
-                    </button>
-                    <span
-                      className={`text-xs font-medium ${
-                        selectedIp === dev.ip ? 'text-indigo-400' : 'text-slate-500'
-                      }`}
-                    >
-                      {selectedIp === dev.ip ? 'Selected' : 'Select'}
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* 6-Digit PIN Entry */}
-        <div>
-          <label className="block mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Enter 6-Digit Connection Key
-          </label>
-          <div
-            className="flex items-center justify-center gap-2 sm:gap-3"
-            onPaste={handlePaste}
-          >
-            {pinDigits.map((digit, idx) => (
-              <input
-                key={idx}
-                ref={(el) => {
-                  inputRefs.current[idx] = el;
-                }}
-                type="text"
-                inputMode="numeric"
-                maxLength={1}
-                value={digit}
-                onChange={(e) => handleDigitChange(idx, e.target.value)}
-                onKeyDown={(e) => handleKeyDown(idx, e)}
-                className="h-12 w-10 sm:h-14 sm:w-12 rounded-xl border border-white/10 bg-slate-950/80 text-center font-mono text-xl sm:text-2xl font-bold text-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-              />
-            ))}
-          </div>
-
-          {errorMsg && (
-            <p className="mt-2 text-center text-xs font-medium text-rose-400">
-              {errorMsg}
-            </p>
-          )}
-        </div>
-
-        {/* Manual Host IP (Optional) */}
-        {!selectedIp && (
+      <div className="flex-1 flex flex-col gap-4">
+        {/* Manual connect form */}
+        <div className="space-y-3">
           <div>
-            <label className="block mb-1 text-xs text-slate-400">
-              Host IP Address (Optional / Manual):
+            <label className="text-xs font-semibold uppercase tracking-wider block mb-1.5" style={{ color: '#64748b' }}>
+              Host IP Address
             </label>
             <input
               type="text"
-              placeholder="e.g. 192.168.1.102"
-              value={manualIp}
-              onChange={(e) => setManualIp(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3.5 py-2 text-xs font-mono text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              value={hostIp}
+              onChange={(e) => setHostIp(e.target.value)}
+              placeholder="192.168.1.100"
+              className="input-field"
+              disabled={loading}
             />
           </div>
-        )}
 
-        {/* Connect Action Button */}
-        <button
-          onClick={handleConnect}
-          disabled={loading || pinDigits.join('').length !== 6}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-400 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] transition cursor-pointer"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Verifying & Connecting...</span>
-            </>
-          ) : (
-            <>
-              <LogIn className="h-4 w-4" />
-              <span>Connect to Host</span>
-            </>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider block mb-1.5" style={{ color: '#64748b' }}>
+              6-Digit Pairing Key
+            </label>
+            <input
+              type="text"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              className="input-field tracking-[0.4em] text-center text-lg font-bold"
+              maxLength={6}
+              disabled={loading}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleJoin(); }}
+            />
+          </div>
+
+          {error && (
+            <p className="text-xs" style={{ color: '#f87171' }}>⚠ {error}</p>
           )}
-        </button>
+
+          <button
+            onClick={() => handleJoin()}
+            disabled={loading}
+            className="btn-primary w-full"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Connecting…
+              </>
+            ) : (
+              <>
+                <ArrowRight className="h-4 w-4" />
+                Connect
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Discovered devices */}
+        {discoveredDevices.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Search className="h-3.5 w-3.5" style={{ color: '#475569' }} />
+              <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#475569' }}>
+                Nearby Devices
+              </span>
+              <span className="ml-auto badge badge-muted">{discoveredDevices.length}</span>
+            </div>
+
+            <div className="space-y-2">
+              {discoveredDevices.map((device) => {
+                const { icon, label } = getOsLabel(device.os);
+                return (
+                  <button
+                    key={device.device_id}
+                    onClick={() => handleDeviceClick(device)}
+                    className="w-full flex items-center gap-3 rounded-lg p-2.5 text-left transition-all duration-150 cursor-pointer"
+                    style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.07)',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)';
+                      (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.12)';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)';
+                      (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.07)';
+                    }}
+                  >
+                    <div
+                      className="flex h-9 w-9 items-center justify-center rounded-lg flex-shrink-0 text-lg"
+                      style={{ background: 'rgba(255,255,255,0.05)' }}
+                    >
+                      {icon}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate" style={{ color: '#e2e8f0' }}>
+                        {device.device_name}
+                      </p>
+                      <p className="text-xs" style={{ color: '#64748b' }}>
+                        {label} • {device.ip}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {device.is_host ? (
+                        <span className="badge badge-info">
+                          <Zap className="h-2.5 w-2.5" />
+                          Host
+                        </span>
+                      ) : (
+                        <span className="badge badge-muted">
+                          <Wifi className="h-2.5 w-2.5" />
+                          Peer
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

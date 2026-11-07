@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, Check, RefreshCw, Power, Shield, Clock, Laptop } from 'lucide-react';
+import { Copy, Check, RefreshCw, Shield, Clock, Wifi, Users } from 'lucide-react';
 import type { ConnectionStatus } from '../types';
 
 interface HostSectionProps {
@@ -8,18 +8,13 @@ interface HostSectionProps {
   onDisconnect: () => void;
 }
 
-export const HostSection: React.FC<HostSectionProps> = ({
-  status,
-  onStartHost,
-  onDisconnect,
-}) => {
+export const HostSection: React.FC<HostSectionProps> = ({ status, onStartHost, onDisconnect }) => {
   const [copied, setCopied] = useState(false);
 
   const isHosting = status.mode === 'hosting';
   const isConnected = status.mode === 'connected';
   const pin = status.pin || '';
   const remaining = status.pin_remaining_seconds ?? 300;
-
   const minutes = Math.floor(remaining / 60);
   const seconds = remaining % 60;
   const timeFormatted = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
@@ -34,133 +29,141 @@ export const HostSection: React.FC<HostSectionProps> = ({
   };
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 shadow-xl backdrop-blur-md">
-      <div className="flex items-center justify-between pb-4 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-            <Shield className="h-5 w-5" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold text-white">Host Laptop</h2>
-            <p className="text-xs text-slate-400">
-              Provide connection key for other devices to control or join
-            </p>
-          </div>
+    <div className="card p-5 h-full flex flex-col">
+      {/* Card Header */}
+      <div className="flex items-center gap-3 pb-4 mb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-lg"
+          style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.2)' }}
+        >
+          <Shield className="h-4 w-4" style={{ color: '#0ea5e9' }} />
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold" style={{ color: '#f1f5f9' }}>Host Mode</h2>
+          <p className="text-xs" style={{ color: '#64748b' }}>Generate a key to allow another device to connect</p>
         </div>
 
-        {isConnected && (
-          <button
-            onClick={onDisconnect}
-            className="flex items-center gap-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 px-3 py-1.5 text-xs font-semibold text-rose-300 transition cursor-pointer"
-          >
-            <Power className="h-3.5 w-3.5" />
-            <span>Disconnect</span>
-          </button>
-        )}
+        <div className="ml-auto">
+          {isHosting && (
+            <span className="badge badge-warning">
+              <span className="dot-pulse mr-1" style={{ background: '#f59e0b', width: '6px', height: '6px', display: 'inline-block', borderRadius: '50%' }} />
+              Waiting…
+            </span>
+          )}
+          {isConnected && status.role === 'host' && (
+            <span className="badge badge-success">
+              <span className="dot-pulse mr-1" style={{ background: '#10b981', width: '6px', height: '6px', display: 'inline-block', borderRadius: '50%' }} />
+              Connected
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="mt-5">
+      {/* Content */}
+      <div className="flex-1 flex flex-col">
         {!isHosting && !isConnected ? (
-          <div className="flex flex-col items-center justify-center py-6 text-center">
-            <p className="mb-4 max-w-sm text-xs leading-relaxed text-slate-400">
-              Click below to generate a temporary, secure 6-digit key. Your MacBook can use this key to connect instantly.
-            </p>
-            <button
-              onClick={onStartHost}
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/25 hover:from-cyan-400 hover:to-blue-500 active:scale-95 transition cursor-pointer"
+          /* Idle state */
+          <div className="flex flex-col items-center justify-center flex-1 py-6 text-center gap-4">
+            <div
+              className="flex h-16 w-16 items-center justify-center rounded-2xl"
+              style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.15)' }}
             >
+              <Wifi className="h-8 w-8" style={{ color: '#334155' }} />
+            </div>
+            <div>
+              <p className="text-sm font-medium" style={{ color: '#94a3b8' }}>Not hosting</p>
+              <p className="text-xs mt-1 max-w-[200px]" style={{ color: '#475569' }}>
+                Start hosting to generate a secure 6-digit pairing key
+              </p>
+            </div>
+            <button onClick={onStartHost} className="btn-primary">
               <RefreshCw className="h-4 w-4" />
-              <span>Create Connection</span>
+              Start Hosting
             </button>
           </div>
         ) : isHosting ? (
-          <div className="space-y-5">
-            {/* 6-Digit Display */}
+          /* Hosting — PIN display */
+          <div className="flex flex-col gap-5">
+            {/* PIN Digits */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Pairing Key (6 Digits)
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#64748b' }}>
+                  Pairing Key
                 </span>
-                <div className="flex items-center gap-1 text-xs text-amber-400 font-mono">
+                <div className="flex items-center gap-1.5 text-xs font-mono" style={{ color: '#f59e0b' }}>
                   <Clock className="h-3.5 w-3.5" />
-                  <span>Expires in {timeFormatted}</span>
+                  <span>Expires {timeFormatted}</span>
                 </div>
               </div>
 
-              {/* Digits Display */}
-              <div className="flex items-center justify-center gap-2 sm:gap-3 py-3">
+              <div className="flex items-center justify-center gap-2">
                 {pin.split('').map((digit, idx) => (
-                  <div
-                    key={idx}
-                    className="flex h-14 w-11 sm:h-16 sm:w-13 items-center justify-center rounded-xl border border-cyan-500/30 bg-slate-950/80 font-mono text-2xl sm:text-3xl font-extrabold text-cyan-300 shadow-inner shadow-cyan-500/10"
-                  >
+                  <div key={idx} className="pin-digit">
                     {digit}
                   </div>
                 ))}
               </div>
 
-              {/* Countdown progress bar */}
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800 mt-2">
+              {/* Progress bar */}
+              <div
+                className="mt-3 h-1 w-full overflow-hidden rounded-full"
+                style={{ background: 'rgba(255,255,255,0.06)' }}
+              >
                 <div
-                  className="h-full bg-gradient-to-r from-cyan-500 to-amber-500 transition-all duration-1000 ease-linear"
-                  style={{ width: `${progressPercent}%` }}
+                  className="h-full rounded-full transition-all duration-1000 ease-linear"
+                  style={{
+                    width: `${progressPercent}%`,
+                    background: 'linear-gradient(90deg, #0ea5e9, #f59e0b)',
+                  }}
                 />
               </div>
             </div>
 
-            {/* Actions & Instructions */}
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <p className="text-xs text-slate-400">
-                👉 Enter this 6-digit key on your MacBook Air M1 under <strong className="text-slate-200">Join Connection</strong>.
-              </p>
+            {/* Actions */}
+            <div className="flex gap-2">
+              <button
+                onClick={handleCopy}
+                className="btn-secondary flex-1"
+              >
+                {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? 'Copied!' : 'Copy Key'}
+              </button>
+              <button onClick={onStartHost} className="btn-secondary">
+                <RefreshCw className="h-3.5 w-3.5" />
+                New Key
+              </button>
+            </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleCopy}
-                  className="flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 transition cursor-pointer"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      <span className="text-emerald-400">Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={onStartHost}
-                  title="Generate a new key"
-                  className="flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 transition cursor-pointer"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  <span>Regenerate</span>
-                </button>
-              </div>
+            <div className="text-xs text-center" style={{ color: '#475569' }}>
+              👉 Enter this key on the other computer to connect
             </div>
           </div>
         ) : (
-          /* Connected State */
-          <div className="flex items-center justify-between rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
-                <Laptop className="h-5 w-5" />
+          /* Connected as host */
+          <div className="flex flex-col gap-4">
+            <div
+              className="flex items-center gap-3 rounded-lg p-3"
+              style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}
+            >
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-lg flex-shrink-0"
+                style={{ background: 'rgba(16,185,129,0.12)' }}
+              >
+                <Users className="h-5 w-5" style={{ color: '#10b981' }} />
               </div>
-              <div>
-                <p className="text-xs font-medium text-emerald-300">Device Paired & Connected</p>
-                <p className="text-sm font-bold text-white">
-                  {status.peer_device || 'MacBook Air M1'}
+              <div className="min-w-0">
+                <p className="text-sm font-semibold truncate" style={{ color: '#f1f5f9' }}>
+                  {status.peer_device || 'Remote Device'}
                 </p>
-                <p className="text-xs text-slate-400 font-mono">{status.peer_ip}</p>
+                <p className="text-xs" style={{ color: '#64748b' }}>
+                  {status.peer_ip} • {status.peer_os?.toUpperCase() || 'Unknown OS'}
+                </p>
               </div>
             </div>
-            <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
-              Active Sharing
-            </span>
+
+            <button onClick={onDisconnect} className="btn-danger w-full">
+              Disconnect
+            </button>
           </div>
         )}
       </div>

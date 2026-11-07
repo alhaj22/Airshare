@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wifi, Laptop, Monitor, ArrowRightLeft } from 'lucide-react';
+import { Zap, Monitor, Wifi, ChevronDown } from 'lucide-react';
 import type { ConnectionStatus, SystemInfo } from '../types';
 
 interface HeaderProps {
@@ -8,91 +8,148 @@ interface HeaderProps {
   onToggleActiveScreen: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({
-  systemInfo,
-  status,
-  onToggleActiveScreen,
-}) => {
+function getOsIcon(os: string) {
+  const o = (os || '').toLowerCase();
+  if (o.includes('mac')) return '🍎';
+  if (o.includes('win')) return '🪟';
+  return '🐧';
+}
+
+function getStatusInfo(status: ConnectionStatus) {
+  switch (status.mode) {
+    case 'connected':
+      return {
+        dot: '#10b981',
+        label: 'Connected',
+        pulse: true,
+      };
+    case 'hosting':
+      return {
+        dot: '#f59e0b',
+        label: 'Waiting for client…',
+        pulse: true,
+      };
+    case 'client':
+      return {
+        dot: '#0ea5e9',
+        label: 'Joining…',
+        pulse: true,
+      };
+    default:
+      return {
+        dot: '#334155',
+        label: 'Not connected',
+        pulse: false,
+      };
+  }
+}
+
+export const Header: React.FC<HeaderProps> = ({ systemInfo, status, onToggleActiveScreen }) => {
+  const { dot, label, pulse } = getStatusInfo(status);
   const isConnected = status.mode === 'connected';
-  const isHosting = status.mode === 'hosting';
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-black/40 px-6 py-4 backdrop-blur-md">
-      {/* Brand & Tagline */}
+    <header
+      className="flex items-center justify-between px-5 py-3 select-none"
+      style={{
+        background: 'rgba(10,13,18,0.95)',
+        backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+      }}
+    >
+      {/* Left — Brand */}
       <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-tr from-cyan-500 via-blue-500 to-indigo-600 shadow-lg shadow-cyan-500/20">
-          <ArrowRightLeft className="h-6 w-6 text-white" />
+        <div
+          className="flex h-7 w-7 items-center justify-center rounded-lg"
+          style={{
+            background: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)',
+            boxShadow: '0 2px 10px rgba(14,165,233,0.4)',
+          }}
+        >
+          <Zap className="h-4 w-4 text-white" strokeWidth={2.5} />
         </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-white">AirDesk</h1>
-            <span className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-xs font-semibold text-cyan-400 border border-cyan-500/30">
-              v1.0
-            </span>
-          </div>
-          <p className="text-xs text-slate-400">
-            One Mouse + One Keyboard • Windows & Mac
-          </p>
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-bold" style={{ color: '#f1f5f9', letterSpacing: '-0.01em' }}>
+            AirDesk
+          </span>
+          <span
+            className="text-[10px] font-mono rounded px-1.5 py-0.5"
+            style={{ background: 'rgba(14,165,233,0.1)', color: '#38bdf8', border: '1px solid rgba(14,165,233,0.2)' }}
+          >
+            KVM
+          </span>
         </div>
       </div>
 
-      {/* Middle: Active Focus / Connection Status */}
-      <div className="flex items-center gap-3">
-        {isConnected ? (
-          <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-3.5 py-1.5 shadow-sm">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </span>
-            <span className="text-xs font-medium text-emerald-300">
-              Connected with {status.peer_device || 'Peer Device'}
-            </span>
+      {/* Center — Status */}
+      <div className="flex items-center gap-2">
+        <div
+          className="h-2 w-2 rounded-full"
+          style={{
+            background: dot,
+            boxShadow: pulse ? `0 0 6px ${dot}` : 'none',
+            animation: pulse ? 'dot-pulse-anim 2s ease-in-out infinite' : 'none',
+          }}
+        />
+        <span className="text-xs" style={{ color: '#94a3b8' }}>{label}</span>
 
-            {/* Quick switcher button */}
+        {isConnected && (
+          <>
+            <span style={{ color: '#1e293b' }}>•</span>
             <button
               onClick={onToggleActiveScreen}
-              title="Click to simulate switching cursor between laptops"
-              className="ml-2 flex items-center gap-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 px-2.5 py-1 text-xs font-semibold text-emerald-200 transition cursor-pointer"
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer"
+              style={{
+                background: status.active_screen === 'client'
+                  ? 'rgba(16,185,129,0.12)'
+                  : 'rgba(14,165,233,0.12)',
+                color: status.active_screen === 'client' ? '#6ee7b7' : '#7dd3fc',
+                border: `1px solid ${status.active_screen === 'client' ? 'rgba(16,185,129,0.25)' : 'rgba(14,165,233,0.25)'}`,
+              }}
             >
-              <span>Control:</span>
-              <span className="underline decoration-dotted font-bold">
-                {status.active_screen === 'host' ? 'This Laptop' : status.peer_device || 'MacBook'}
+              <Monitor className="h-3 w-3" />
+              <span>
+                {status.active_screen === 'client'
+                  ? `Remote: ${status.peer_device || 'Remote'}`
+                  : 'Local: This Computer'}
               </span>
+              <ChevronDown className="h-3 w-3" />
             </button>
-          </div>
-        ) : isHosting ? (
-          <div className="flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-            </span>
-            <span className="text-xs font-medium text-amber-300">
-              Host Active • Waiting for 6-Digit PIN pairing
-            </span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 rounded-xl bg-slate-800/80 border border-slate-700 px-3.5 py-1.5">
-            <span className="h-2 w-2 rounded-full bg-slate-500"></span>
-            <span className="text-xs font-medium text-slate-400">Ready to Connect</span>
-          </div>
+          </>
         )}
       </div>
 
-      {/* Right: Local IP & OS info */}
-      <div className="flex items-center gap-3">
-        <div className="hidden sm:flex items-center gap-2 rounded-lg bg-slate-800/60 border border-white/5 px-3 py-1.5 text-xs text-slate-300">
-          <Wifi className="h-3.5 w-3.5 text-cyan-400" />
-          <span>{systemInfo?.local_ip || '192.168.1.x'}</span>
-        </div>
-
-        <div className="flex items-center gap-1.5 rounded-lg bg-slate-800/60 border border-white/5 px-3 py-1.5 text-xs text-slate-300">
-          {systemInfo?.os === 'macOS' ? (
-            <Laptop className="h-3.5 w-3.5 text-purple-400" />
-          ) : (
-            <Monitor className="h-3.5 w-3.5 text-blue-400" />
-          )}
-          <span>{systemInfo?.device_name || 'My Computer'}</span>
-        </div>
+      {/* Right — Device info */}
+      <div className="flex items-center gap-2">
+        {systemInfo?.local_ip && (
+          <div
+            className="hidden sm:flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs"
+            style={{
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              color: '#475569',
+            }}
+          >
+            <Wifi className="h-3 w-3" />
+            <span className="font-mono">{systemInfo.local_ip}</span>
+          </div>
+        )}
+        {systemInfo && (
+          <div
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs"
+            style={{
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              color: '#64748b',
+            }}
+          >
+            <span>{getOsIcon(systemInfo.os)}</span>
+            <span className="max-w-[120px] truncate">{systemInfo.device_name}</span>
+          </div>
+        )}
       </div>
     </header>
   );

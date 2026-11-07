@@ -1,3 +1,5 @@
+// All TypeScript types for AirDesk
+
 export type DeviceOS = 'windows' | 'macos' | 'linux';
 
 export type ScreenArrangementType =
@@ -9,6 +11,8 @@ export type ScreenArrangementType =
 export type AppMode = 'idle' | 'hosting' | 'client' | 'connected';
 
 export type ActiveScreenType = 'host' | 'client';
+
+export type AppPage = 'dashboard' | 'settings' | 'devices' | 'about';
 
 export interface DiscoveredDevice {
   device_id: string;
@@ -63,4 +67,12 @@ export interface ClipboardItem {
   text: string;
   timestamp: number;
   source: string;
+}
+
+export interface AppSettings {
+  mouseSharing: boolean;
+  keyboardSharing: boolean;
+  clipboardSharing: boolean;
+  keyboardMapping: boolean;
+  hotkey: string;
 }

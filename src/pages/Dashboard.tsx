@@ -6,7 +6,35 @@ import { JoinSection } from '../components/JoinSection';
 import { ScreenArrangement } from '../components/ScreenArrangement';
 import { FeaturesBar } from '../components/FeaturesBar';
 import { MacPermissionsModal } from '../components/MacPermissionsModal';
-import { Apple, Info, Link2, Power, MousePointer2 } from 'lucide-react';
+import {
+  Link2,
+  Power,
+  MousePointer2,
+  Apple,
+  Activity,
+  Clock,
+  Monitor,
+  Cpu,
+} from 'lucide-react';
+
+function getOsIcon(os?: string) {
+  const o = (os || '').toLowerCase();
+  if (o.includes('mac')) return '🍎';
+  if (o.includes('win')) return '🪟';
+  if (o.includes('linux')) return '🐧';
+  return '💻';
+}
+
+function formatUptime(connectedAt?: number): string {
+  if (!connectedAt) return '—';
+  const diff = Math.floor(Date.now() / 1000 - connectedAt);
+  const h = Math.floor(diff / 3600);
+  const m = Math.floor((diff % 3600) / 60);
+  const s = diff % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 export const Dashboard: React.FC = () => {
   const {
@@ -20,6 +48,8 @@ export const Dashboard: React.FC = () => {
     setKeyboardSharing,
     clipboardSharing,
     setClipboardSharing,
+    keyboardMapping,
+    setKeyboardMapping,
     notification,
     startHost,
     joinHost,
@@ -30,9 +60,13 @@ export const Dashboard: React.FC = () => {
   } = useAirDesk();
 
   const [showMacModal, setShowMacModal] = useState(false);
+  const isConnected = status.mode === 'connected';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
+    <div
+      className="min-h-screen flex flex-col"
+      style={{ background: 'var(--color-bg-primary)' }}
+    >
       {/* Top Header */}
       <Header
         systemInfo={systemInfo}
@@ -40,24 +74,150 @@ export const Dashboard: React.FC = () => {
         onToggleActiveScreen={toggleActiveScreen}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 space-y-6">
-        {/* Toast Notification Banner */}
-        {notification && (
-          <div
-            className={`flex items-center justify-between rounded-xl px-4 py-3 text-xs font-semibold shadow-lg transition animate-in fade-in slide-in-from-top-2 ${
+      {/* Toast Notification */}
+      {notification && (
+        <div
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-xl px-4 py-3 text-xs font-semibold shadow-2xl slide-down max-w-sm w-full"
+          style={{
+            background:
               notification.type === 'success'
-                ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40'
+                ? 'rgba(16,185,129,0.12)'
                 : notification.type === 'error'
-                ? 'bg-rose-500/20 text-rose-200 border border-rose-500/40'
-                : 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40'
-            }`}
+                ? 'rgba(239,68,68,0.12)'
+                : 'rgba(14,165,233,0.12)',
+            border: `1px solid ${
+              notification.type === 'success'
+                ? 'rgba(16,185,129,0.3)'
+                : notification.type === 'error'
+                ? 'rgba(239,68,68,0.3)'
+                : 'rgba(14,165,233,0.3)'
+            }`,
+            color:
+              notification.type === 'success'
+                ? '#6ee7b7'
+                : notification.type === 'error'
+                ? '#fca5a5'
+                : '#7dd3fc',
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <span className="text-base">
+            {notification.type === 'success' ? '✓' : notification.type === 'error' ? '✕' : 'ℹ'}
+          </span>
+          <span className="flex-1">{notification.text}</span>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-5 space-y-4">
+
+        {/* ─── Active Session Banner (when connected) ─── */}
+        {isConnected && (
+          <div
+            className="rounded-xl p-4 fade-in"
+            style={{
+              background: 'linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(14,165,233,0.04) 100%)',
+              border: '1px solid rgba(16,185,129,0.2)',
+            }}
           >
-            <span>{notification.text}</span>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              {/* Left — session info */}
+              <div className="flex items-center gap-4">
+                <div
+                  className="flex h-11 w-11 items-center justify-center rounded-xl flex-shrink-0"
+                  style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}
+                >
+                  <Link2 className="h-5 w-5" style={{ color: '#10b981' }} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <div
+                      className="h-2 w-2 rounded-full"
+                      style={{
+                        background: '#10b981',
+                        boxShadow: '0 0 6px #10b981',
+                        animation: 'dot-pulse-anim 2s infinite',
+                      }}
+                    />
+                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#10b981' }}>
+                      Session Active
+                    </span>
+                    {status.session?.session_id && (
+                      <span
+                        className="rounded px-1.5 py-0.5 text-[10px] font-mono"
+                        style={{ background: 'rgba(0,0,0,0.4)', color: '#475569' }}
+                      >
+                        {status.session.session_id.slice(0, 12)}…
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-base font-bold flex items-center gap-2 flex-wrap" style={{ color: '#f1f5f9' }}>
+                    <span>{getOsIcon(systemInfo?.os)} {systemInfo?.device_name || 'This Computer'}</span>
+                    <span style={{ color: '#38bdf8' }}>⟷</span>
+                    <span>{getOsIcon(status.peer_os)} {status.peer_device || 'Remote Device'}</span>
+                  </h2>
+                </div>
+              </div>
+
+              {/* Right — stats + actions */}
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Stats */}
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1.5 text-xs" style={{ color: '#64748b' }}>
+                    <Clock className="h-3.5 w-3.5" />
+                    <span>{formatUptime(status.session?.connected_at)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs" style={{ color: '#64748b' }}>
+                    <Monitor className="h-3.5 w-3.5" />
+                    <span>
+                      {status.peer_screen_width}×{status.peer_screen_height}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs" style={{ color: '#64748b' }}>
+                    <Cpu className="h-3.5 w-3.5" />
+                    <span>
+                      {status.peer_ip}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Switch screen btn */}
+                <button
+                  onClick={toggleActiveScreen}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all cursor-pointer"
+                  style={{
+                    background: status.active_screen === 'client'
+                      ? 'rgba(16,185,129,0.12)'
+                      : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${status.active_screen === 'client' ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                    color: status.active_screen === 'client' ? '#6ee7b7' : '#94a3b8',
+                  }}
+                >
+                  <MousePointer2 className="h-3.5 w-3.5" />
+                  <span>
+                    {status.active_screen === 'client'
+                      ? `Controlling: ${status.peer_device || 'Remote'}`
+                      : 'Control: This Computer'}
+                  </span>
+                </button>
+
+                {/* Activity indicator */}
+                <div className="flex items-center gap-1.5 text-xs" style={{ color: '#10b981' }}>
+                  <Activity className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Input Sharing Active</span>
+                </div>
+
+                {/* Disconnect */}
+                <button onClick={disconnect} className="btn-danger">
+                  <Power className="h-3.5 w-3.5" />
+                  <span>End Session</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Feature Toggles Strip */}
+        {/* ─── Feature Toggles ─── */}
         <FeaturesBar
           mouseSharing={mouseSharing}
           setMouseSharing={setMouseSharing}
@@ -65,67 +225,20 @@ export const Dashboard: React.FC = () => {
           setKeyboardSharing={setKeyboardSharing}
           clipboardSharing={clipboardSharing}
           setClipboardSharing={setClipboardSharing}
+          keyboardMapping={keyboardMapping}
+          setKeyboardMapping={setKeyboardMapping}
         />
 
-        {/* Connected Session Center OR 2-Column Pairing Grid */}
-        {status.mode === 'connected' ? (
-          <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-slate-900/60 to-cyan-950/40 p-6 shadow-xl backdrop-blur-md">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-inner">
-                  <Link2 className="h-6 w-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-                      Active Session Established
-                    </span>
-                    {status.session?.session_id && (
-                      <span className="rounded bg-black/40 px-2 py-0.5 text-[10px] font-mono text-slate-400">
-                        {status.session.session_id}
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="text-lg font-bold text-white mt-0.5 flex items-center gap-2">
-                    <span>{systemInfo?.device_name || 'This Computer'}</span>
-                    <span className="text-cyan-400">↔</span>
-                    <span>{status.peer_device || 'Remote Laptop'}</span>
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    Connected via {status.peer_ip || 'Local LAN'} • Ultra low-latency hardware input sync
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={toggleActiveScreen}
-                  className="flex items-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-700 px-4 py-2.5 text-xs font-semibold text-slate-200 border border-white/10 transition cursor-pointer"
-                >
-                  <MousePointer2 className="h-4 w-4 text-cyan-400" />
-                  <span>Control: {status.active_screen === 'host' ? 'This Laptop' : 'Remote Laptop'}</span>
-                </button>
-
-                <button
-                  onClick={disconnect}
-                  className="flex items-center gap-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 px-4 py-2.5 text-xs font-bold text-rose-300 hover:text-rose-200 transition cursor-pointer shadow-lg shadow-rose-950/40"
-                >
-                  <Power className="h-4 w-4" />
-                  <span>End Session</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ─── Connect Grid (shown when not connected) ─── */}
+        {!isConnected && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <HostSection
               status={status}
               onStartHost={startHost}
               onDisconnect={disconnect}
             />
-
             <JoinSection
+              status={status}
               discoveredDevices={discoveredDevices}
               onJoin={joinHost}
               onSimulateConnect={simulatePeerConnection}
@@ -133,7 +246,7 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
 
-        {/* Interactive Screen Arrangement & Visualizer */}
+        {/* ─── Screen Arrangement ─── */}
         <ScreenArrangement
           status={status}
           systemInfo={systemInfo}
@@ -143,30 +256,85 @@ export const Dashboard: React.FC = () => {
           onDeviceDrop={(dev) => joinHost(dev.ip, 'auto_connect')}
         />
 
-        {/* Bottom Helper Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-white/5 text-xs text-slate-400">
-          <div className="flex items-center gap-2">
-            <Info className="h-4 w-4 text-cyan-400" />
-            <span>
-              Pure Local Wi-Fi connection. Zero cloud servers, zero internet latency.
-            </span>
+        {/* ─── OS Keyboard Mapping Info (when connected cross-platform) ─── */}
+        {isConnected && keyboardMapping && status.peer_os && status.peer_os !== (systemInfo?.os?.toLowerCase()) && (
+          <div
+            className="rounded-xl p-4 fade-in"
+            style={{
+              background: 'rgba(245,158,11,0.06)',
+              border: '1px solid rgba(245,158,11,0.15)',
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-lg flex-shrink-0">🔀</span>
+              <div>
+                <p className="text-sm font-semibold mb-1" style={{ color: '#fcd34d' }}>
+                  Cross-Platform Keyboard Mapping Active
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: '#78716c' }}>
+                  {status.peer_os?.toLowerCase().includes('mac')
+                    ? 'Your Windows Ctrl key is mapped to Mac Command (⌘). Alt → Option. Win key → Control. Shortcuts like Ctrl+C become Cmd+C automatically.'
+                    : 'Mac Command (⌘) is mapped to Windows Ctrl. Option → Alt. Control → Win key. Shortcuts like Cmd+C become Ctrl+C automatically.'}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-3 text-xs font-mono">
+                  {status.peer_os?.toLowerCase().includes('mac') ? (
+                    <>
+                      <span style={{ color: '#94a3b8' }}>Ctrl+C → ⌘C</span>
+                      <span style={{ color: '#94a3b8' }}>Ctrl+V → ⌘V</span>
+                      <span style={{ color: '#94a3b8' }}>Alt+Tab → ⌘Tab</span>
+                      <span style={{ color: '#94a3b8' }}>Win → ⌃ Ctrl</span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ color: '#94a3b8' }}>⌘C → Ctrl+C</span>
+                      <span style={{ color: '#94a3b8' }}>⌘V → Ctrl+V</span>
+                      <span style={{ color: '#94a3b8' }}>⌘Tab → Alt+Tab</span>
+                      <span style={{ color: '#94a3b8' }}>⌃ → Win</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── Bottom Footer Bar ─── */}
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 pt-2"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}
+        >
+          <div className="flex items-center gap-4 text-xs" style={{ color: '#334155' }}>
+            <span>🔒 Local LAN only • No cloud servers</span>
+            <span>Port 42426</span>
           </div>
 
-          <button
-            onClick={() => setShowMacModal(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-white/10 px-3 py-1.5 text-slate-300 hover:text-white transition cursor-pointer"
-          >
-            <Apple className="h-3.5 w-3.5 text-purple-400" />
-            <span>MacBook Setup & Permissions</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowMacModal(true)}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-all cursor-pointer"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.07)',
+                color: '#475569',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.color = '#94a3b8';
+                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.14)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.color = '#475569';
+                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.07)';
+              }}
+            >
+              <Apple className="h-3.5 w-3.5" style={{ color: '#a78bfa' }} />
+              <span>macOS Permissions</span>
+            </button>
+          </div>
         </div>
       </main>
 
-      {/* Mac Accessibility Permission Helper Modal */}
-      <MacPermissionsModal
-        isOpen={showMacModal}
-        onClose={() => setShowMacModal(false)}
-      />
+      {/* Mac Permissions Modal */}
+      <MacPermissionsModal isOpen={showMacModal} onClose={() => setShowMacModal(false)} />
     </div>
   );
 };
