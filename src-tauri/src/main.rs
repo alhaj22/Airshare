@@ -649,6 +649,62 @@ async fn get_host_os(state: tauri::State<'_, AppState>) -> Result<String, String
     Ok(state.sys_info.os.to_lowercase())
 }
 
+#[tauri::command]
+async fn check_accessibility() -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        #[link(name = "ApplicationServices", kind = "framework")]
+        extern "C" {
+            pub fn AXIsProcessTrustedWithOptions(options: *mut std::os::raw::c_void) -> bool;
+            pub static kAXTrustedCheckOptionPrompt: *const std::os::raw::c_void;
+        }
+        #[link(name = "CoreFoundation", kind = "framework")]
+        extern "C" {
+            pub fn CFDictionaryCreate(
+                allocator: *mut std::os::raw::c_void,
+                keys: *const *const std::os::raw::c_void,
+                values: *const *const std::os::raw::c_void,
+                numValues: isize,
+                keyCallBacks: *const std::os::raw::c_void,
+                valueCallBacks: *const std::os::raw::c_void,
+            ) -> *mut std::os::raw::c_void;
+            pub static kCFBooleanTrue: *const std::os::raw::c_void;
+            pub fn CFRelease(cf: *mut std::os::raw::c_void);
+        }
+
+        let keys = [kAXTrustedCheckOptionPrompt];
+        let values = [kCFBooleanTrue];
+        let dict = CFDictionaryCreate(
+            std::ptr::null_mut(),
+            keys.as_ptr(),
+            values.as_ptr(),
+            1,
+            std::ptr::null(),
+            std::ptr::null(),
+        );
+
+        let trusted = AXIsProcessTrustedWithOptions(dict);
+        if !dict.is_null() {
+            CFRelease(dict);
+        }
+        return Ok(trusted);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    Ok(true)
+}
+
+#[tauri::command]
+async fn open_accessibility_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .spawn();
+    }
+    Ok(())
+}
+
 fn dirs_fallback() -> PathBuf {
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
@@ -719,6 +775,12 @@ fn main() {
     tauri::Builder::default()
         .manage(app_state)
         .setup(move |_app| {
+            #[cfg(target_os = "macos")]
+            {
+                tauri::async_runtime::spawn(async move {
+                    let _ = check_accessibility().await;
+                });
+            }
             tauri::async_runtime::spawn(async move {
                 let _ = disc_clone.start().await;
             });
@@ -733,7 +795,9 @@ fn main() {
             disconnect_all,
             set_screen_arrangement,
             get_connection_status,
-            toggle_active_screen
+            toggle_active_screen,
+            check_accessibility,
+            open_accessibility_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running AirDesk application");

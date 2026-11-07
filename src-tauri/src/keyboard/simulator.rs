@@ -14,6 +14,7 @@ mod macos {
 
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
+        pub fn CGEventSourceCreate(stateID: i32) -> *mut c_void;
         pub fn CGEventCreateKeyboardEvent(
             source: *mut c_void,
             virtualKey: u16,
@@ -337,10 +338,12 @@ impl KeyboardSimulator {
             if (modifiers & 4) != 0 { cg_flags |= 0x00080000; } // Option (⌥)
             if (modifiers & 8) != 0 { cg_flags |= 0x00040000; } // Control (^)
 
+            let source = CGEventSourceCreate(1 /* kCGEventSourceStateHIDSystemState */);
+
             if mac_code != 0xFFFF {
-                let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), mac_code, is_down);
+                let evt = CGEventCreateKeyboardEvent(source, mac_code, is_down);
                 if !evt.is_null() {
-                    CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                    CGEventSetIntegerValueField(evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                     if cg_flags != 0 {
                         CGEventSetFlags(evt, cg_flags);
                     }
@@ -348,15 +351,13 @@ impl KeyboardSimulator {
                     if is_modifier_key {
                         CGEventSetType(evt, 12 /* kCGEventFlagsChanged */);
                     }
-                    // Post to both HID System Tap (0) and Session Tap (1) to guarantee delivery
                     CGEventPost(0 /* kCGHIDEventTap */, evt);
-                    CGEventPost(1 /* kCGSessionEventTap */, evt);
                     CFRelease(evt);
                 }
             } else if let Some(ch) = key_char {
-                let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), 0, is_down);
+                let evt = CGEventCreateKeyboardEvent(source, 0, is_down);
                 if !evt.is_null() {
-                    CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                    CGEventSetIntegerValueField(evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                     if cg_flags != 0 {
                         CGEventSetFlags(evt, cg_flags);
                     }
@@ -365,9 +366,12 @@ impl KeyboardSimulator {
                         CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
                     }
                     CGEventPost(0 /* kCGHIDEventTap */, evt);
-                    CGEventPost(1 /* kCGSessionEventTap */, evt);
                     CFRelease(evt);
                 }
+            }
+
+            if !source.is_null() {
+                CFRelease(source);
             }
         }
     }

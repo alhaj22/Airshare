@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAirDesk } from '../hooks/useAirDesk';
+import { api } from '../services/tauriBridge';
 import { Header } from '../components/Header';
 import { HostSection } from '../components/HostSection';
 import { JoinSection } from '../components/JoinSection';
@@ -61,6 +62,20 @@ export const Dashboard: React.FC = () => {
 
   const [showMacModal, setShowMacModal] = useState(false);
   const isConnected = status.mode === 'connected';
+
+  // Automatically check if running on macOS and accessibility permission is granted
+  useEffect(() => {
+    const checkMacAccess = async () => {
+      const os = await api.getHostOs();
+      if (os === 'macos') {
+        const isTrusted = await api.checkAccessibility();
+        if (!isTrusted) {
+          setShowMacModal(true);
+        }
+      }
+    };
+    checkMacAccess();
+  }, []);
 
   return (
     <div

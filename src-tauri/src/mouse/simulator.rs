@@ -27,6 +27,7 @@ mod macos {
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
         pub fn CGWarpMouseCursorPosition(newCursorPosition: CGPoint) -> i32;
+        pub fn CGEventSourceCreate(stateID: i32) -> *mut c_void;
         pub fn CGEventCreate(source: *mut c_void) -> *mut c_void;
         pub fn CGEventGetLocation(event: *mut c_void) -> CGPoint;
         pub fn CGEventCreateMouseEvent(
@@ -119,11 +120,15 @@ impl MouseSimulator {
                 5 // kCGEventMouseMoved
             };
             let mouse_btn = if self.is_right_down.load(Ordering::SeqCst) { 1 } else { 0 };
-            let move_evt = CGEventCreateMouseEvent(std::ptr::null_mut(), mouse_type, pos, mouse_btn);
+            let source = CGEventSourceCreate(1 /* kCGEventSourceStateHIDSystemState */);
+            let move_evt = CGEventCreateMouseEvent(source, mouse_type, pos, mouse_btn);
             if !move_evt.is_null() {
-                CGEventSetIntegerValueField(move_evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                CGEventSetIntegerValueField(move_evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                 CGEventPost(0 /* kCGHIDEventTap */, move_evt);
                 CFRelease(move_evt);
+            }
+            if !source.is_null() {
+                CFRelease(source);
             }
         }
     }
@@ -181,11 +186,15 @@ impl MouseSimulator {
                 _ => return,
             };
 
-            let evt = CGEventCreateMouseEvent(std::ptr::null_mut(), mouse_type, cur_pos, mouse_btn);
+            let source = CGEventSourceCreate(1 /* kCGEventSourceStateHIDSystemState */);
+            let evt = CGEventCreateMouseEvent(source, mouse_type, cur_pos, mouse_btn);
             if !evt.is_null() {
-                CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                CGEventSetIntegerValueField(evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                 CGEventPost(0 /* kCGHIDEventTap */, evt);
                 CFRelease(evt);
+            }
+            if !source.is_null() {
+                CFRelease(source);
             }
         }
     }
@@ -239,7 +248,7 @@ impl MouseSimulator {
                     delta_y * 10,
                 );
                 if !evt.is_null() {
-                    CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                    CGEventSetIntegerValueField(evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                     CGEventPost(0 /* kCGHIDEventTap */, evt);
                     CFRelease(evt);
                 }

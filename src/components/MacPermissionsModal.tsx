@@ -1,5 +1,6 @@
-import React from 'react';
-import { X, Apple, Shield, Terminal } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Apple, Shield, ExternalLink, CheckCircle } from 'lucide-react';
+import { api } from '../services/tauriBridge';
 
 interface MacPermissionsModalProps {
   isOpen: boolean;
@@ -7,95 +8,96 @@ interface MacPermissionsModalProps {
 }
 
 export const MacPermissionsModal: React.FC<MacPermissionsModalProps> = ({ isOpen, onClose }) => {
+  const [isChecked, setIsChecked] = useState(false);
+
   if (!isOpen) return null;
+
+  const handleOpenSettings = async () => {
+    await api.openAccessibilitySettings();
+  };
+
+  const handleVerify = async () => {
+    const trusted = await api.checkAccessibility();
+    if (trusted) {
+      setIsChecked(true);
+      setTimeout(() => {
+        onClose();
+      }, 800);
+    } else {
+      alert('Accessibility permission is still not granted. In System Settings > Privacy & Security > Accessibility, make sure the switch for Terminal or AirDesk is toggled ON.');
+    }
+  };
 
   const steps = [
     {
       num: 1,
       title: 'Open System Settings',
-      desc: 'Go to Apple Menu → System Settings (or System Preferences on older macOS)',
+      desc: 'Click the button below to directly open Accessibility Settings on this Mac.',
       icon: <Apple className="h-4 w-4" />,
     },
     {
       num: 2,
       title: 'Privacy & Security → Accessibility',
-      desc: 'Scroll down in the left sidebar to Privacy & Security, then click Accessibility',
+      desc: 'Look for "AirDesk" or "Terminal" / "iTerm" in the Accessibility list.',
       icon: <Shield className="h-4 w-4" />,
     },
     {
       num: 3,
-      title: 'Enable AirDesk',
-      desc: 'Click the + button, navigate to the AirDesk app, and toggle it ON. Enter your password if prompted.',
-      icon: <Terminal className="h-4 w-4" />,
+      title: 'Toggle Switch to ON',
+      desc: 'Turn the switch ON (enter your Mac password if asked). If already in the list, toggle it OFF and back ON.',
+      icon: <CheckCircle className="h-4 w-4" />,
     },
   ];
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}
+      style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)' }}
       onClick={onClose}
     >
       <div
-        className="card w-full max-w-md p-6 fade-in"
+        className="card w-full max-w-md p-6 fade-in shadow-2xl border border-sky-500/30"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div
-              className="flex h-9 w-9 items-center justify-center rounded-xl"
-              style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.2)' }}
+              className="flex h-10 w-10 items-center justify-center rounded-xl"
+              style={{ background: 'rgba(56,189,248,0.15)', border: '1px solid rgba(56,189,248,0.3)' }}
             >
-              <Apple className="h-5 w-5" style={{ color: '#a78bfa' }} />
+              <Apple className="h-6 w-6 text-sky-400" />
             </div>
             <div>
-              <h2 className="text-sm font-bold" style={{ color: '#f1f5f9' }}>macOS Permissions Setup</h2>
-              <p className="text-xs" style={{ color: '#64748b' }}>Required for input capture to work</p>
+              <h2 className="text-base font-bold text-white">macOS Accessibility Setup</h2>
+              <p className="text-xs text-sky-300">Required to receive mouse clicks & keyboard</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors cursor-pointer"
-            style={{ color: '#475569' }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = '#94a3b8')}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = '#475569')}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Important warning */}
-        <div
-          className="rounded-lg p-3 mb-5 text-xs"
-          style={{
-            background: 'rgba(245,158,11,0.08)',
-            border: '1px solid rgba(245,158,11,0.2)',
-            color: '#fcd34d',
-          }}
-        >
-          ⚠️ AirDesk requires <strong>Accessibility permission</strong> on macOS to capture and simulate keyboard/mouse input. Without this, input sharing will not work.
+        {/* Important Alert */}
+        <div className="rounded-lg p-3 mb-4 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-300 leading-relaxed">
+          ⚠️ <strong>Required for clicks & typing:</strong> macOS blocks all simulated mouse clicks and keyboard keystrokes until Accessibility permission is granted in System Settings.
         </div>
 
         {/* Steps */}
-        <div className="space-y-4">
+        <div className="space-y-3.5 mb-6">
           {steps.map((step) => (
-            <div key={step.num} className="flex gap-4">
-              <div
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold"
-                style={{
-                  background: 'rgba(14,165,233,0.12)',
-                  border: '1px solid rgba(14,165,233,0.2)',
-                  color: '#38bdf8',
-                }}
-              >
+            <div key={step.num} className="flex gap-3 items-start">
+              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold bg-sky-500/20 text-sky-400 border border-sky-500/30">
                 {step.num}
               </div>
               <div>
-                <p className="text-sm font-semibold mb-0.5" style={{ color: '#e2e8f0' }}>
+                <p className="text-xs font-semibold text-slate-200">
                   {step.title}
                 </p>
-                <p className="text-xs leading-relaxed" style={{ color: '#64748b' }}>
+                <p className="text-[11px] text-slate-400 leading-snug mt-0.5">
                   {step.desc}
                 </p>
               </div>
@@ -103,10 +105,23 @@ export const MacPermissionsModal: React.FC<MacPermissionsModalProps> = ({ isOpen
           ))}
         </div>
 
-        {/* Done button */}
-        <button onClick={onClose} className="btn-primary w-full mt-6">
-          Got it, done!
-        </button>
+        {/* Buttons */}
+        <div className="space-y-2">
+          <button
+            onClick={handleOpenSettings}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition-all cursor-pointer shadow-lg shadow-sky-500/20"
+          >
+            <ExternalLink className="h-4 w-4" />
+            <span>Open System Settings Now</span>
+          </button>
+
+          <button
+            onClick={handleVerify}
+            className="w-full py-2 px-4 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/15 text-slate-200 transition-all cursor-pointer border border-white/10"
+          >
+            {isChecked ? '✓ Permission Granted!' : 'I Have Enabled It (Verify & Continue)'}
+          </button>
+        </div>
       </div>
     </div>
   );

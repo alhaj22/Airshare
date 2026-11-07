@@ -278,4 +278,27 @@ export const api = {
   simulateScreenSwitch(target: 'host' | 'client') {
     mockState.activeScreen = target;
   },
+
+  async checkAccessibility(): Promise<boolean> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<boolean>('check_accessibility');
+      } catch (err) {
+        console.warn('Failed to check accessibility:', err);
+      }
+    }
+    return true;
+  },
+
+  async openAccessibilitySettings(): Promise<void> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('open_accessibility_settings');
+      } catch (err) {
+        console.warn('Failed to open accessibility settings:', err);
+      }
+    }
+  },
 };
