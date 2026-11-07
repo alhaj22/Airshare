@@ -7,15 +7,16 @@ import { JoinSection } from '../components/JoinSection';
 import { ScreenArrangement } from '../components/ScreenArrangement';
 import { FeaturesBar } from '../components/FeaturesBar';
 import { MacPermissionsModal } from '../components/MacPermissionsModal';
+import { KeyboardShortcutsSettings } from '../components/KeyboardShortcutsSettings';
 import {
-  Link2,
   Power,
   MousePointer2,
   Apple,
   Activity,
   Clock,
   Monitor,
-  Cpu,
+  Command,
+  Settings2,
 } from 'lucide-react';
 
 function getOsIcon(os?: string) {
@@ -61,6 +62,7 @@ export const Dashboard: React.FC = () => {
   } = useAirDesk();
 
   const [showMacModal, setShowMacModal] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const isConnected = status.mode === 'connected';
 
   // Automatically check if running on macOS and accessibility permission is granted
@@ -87,6 +89,7 @@ export const Dashboard: React.FC = () => {
         systemInfo={systemInfo}
         status={status}
         onToggleActiveScreen={toggleActiveScreen}
+        onOpenShortcuts={() => setShowShortcutsModal(true)}
       />
 
       {/* Toast Notification */}
@@ -139,64 +142,53 @@ export const Dashboard: React.FC = () => {
               {/* Left — session info */}
               <div className="flex items-center gap-4">
                 <div
-                  className="flex h-11 w-11 items-center justify-center rounded-xl flex-shrink-0"
-                  style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl text-2xl flex-shrink-0"
+                  style={{
+                    background: 'rgba(16,185,129,0.12)',
+                    border: '1px solid rgba(16,185,129,0.25)',
+                  }}
                 >
-                  <Link2 className="h-5 w-5" style={{ color: '#10b981' }} />
+                  {getOsIcon(status.peer_os)}
                 </div>
+
                 <div>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <div
-                      className="h-2 w-2 rounded-full"
-                      style={{
-                        background: '#10b981',
-                        boxShadow: '0 0 6px #10b981',
-                        animation: 'dot-pulse-anim 2s infinite',
-                      }}
-                    />
-                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#10b981' }}>
-                      Session Active
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white">
+                      {status.peer_device || 'Connected Peer'}
                     </span>
-                    {status.session?.session_id && (
-                      <span
-                        className="rounded px-1.5 py-0.5 text-[10px] font-mono"
-                        style={{ background: 'rgba(0,0,0,0.4)', color: '#475569' }}
-                      >
-                        {status.session.session_id.slice(0, 12)}…
-                      </span>
-                    )}
+                    <span
+                      className="text-[10px] font-mono px-2 py-0.5 rounded font-semibold"
+                      style={{
+                        background: 'rgba(16,185,129,0.15)',
+                        color: '#6ee7b7',
+                        border: '1px solid rgba(16,185,129,0.3)',
+                      }}
+                    >
+                      {status.role === 'host' ? 'Host (Master)' : 'Client (Joined)'}
+                    </span>
                   </div>
-                  <h2 className="text-base font-bold flex items-center gap-2 flex-wrap" style={{ color: '#f1f5f9' }}>
-                    <span>{getOsIcon(systemInfo?.os)} {systemInfo?.device_name || 'This Computer'}</span>
-                    <span style={{ color: '#38bdf8' }}>⟷</span>
-                    <span>{getOsIcon(status.peer_os)} {status.peer_device || 'Remote Device'}</span>
-                  </h2>
+
+                  <div className="flex items-center gap-3 text-xs mt-1" style={{ color: '#64748b' }}>
+                    <span className="font-mono">{status.peer_ip}</span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <Monitor className="h-3 w-3" />
+                      {status.peer_screen_width && status.peer_screen_height
+                        ? `${status.peer_screen_width}×${status.peer_screen_height}`
+                        : 'Remote Screen'}
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatUptime(status.session?.connected_at)}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Right — stats + actions */}
-              <div className="flex items-center gap-3 flex-wrap">
-                {/* Stats */}
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-1.5 text-xs" style={{ color: '#64748b' }}>
-                    <Clock className="h-3.5 w-3.5" />
-                    <span>{formatUptime(status.session?.connected_at)}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs" style={{ color: '#64748b' }}>
-                    <Monitor className="h-3.5 w-3.5" />
-                    <span>
-                      {status.peer_screen_width}×{status.peer_screen_height}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs" style={{ color: '#64748b' }}>
-                    <Cpu className="h-3.5 w-3.5" />
-                    <span>
-                      {status.peer_ip}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Switch screen btn */}
+              {/* Right — Active Screen indicator & Disconnect */}
+              <div className="flex items-center gap-3">
+                {/* Active screen button */}
                 <button
                   onClick={toggleActiveScreen}
                   className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all cursor-pointer"
@@ -242,6 +234,7 @@ export const Dashboard: React.FC = () => {
           setClipboardSharing={setClipboardSharing}
           keyboardMapping={keyboardMapping}
           setKeyboardMapping={setKeyboardMapping}
+          onOpenShortcuts={() => setShowShortcutsModal(true)}
         />
 
         {/* ─── Connect Grid (shown when not connected) ─── */}
@@ -261,54 +254,63 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
 
-        {/* ─── Screen Arrangement ─── */}
+        {/* ─── Virtual Monitor Arrangement (Interactive Multi-Monitor System) ─── */}
         <ScreenArrangement
           status={status}
           systemInfo={systemInfo}
           arrangement={screenArrangement}
           onArrangementChange={updateArrangement}
           onSimulateEdgeCross={toggleActiveScreen}
-          onDeviceDrop={(dev) => joinHost(dev.ip, 'auto_connect')}
         />
 
-        {/* ─── OS Keyboard Mapping Info (when connected cross-platform) ─── */}
-        {isConnected && keyboardMapping && status.peer_os && status.peer_os !== (systemInfo?.os?.toLowerCase()) && (
+        {/* ─── Key Mapping Information Banner ─── */}
+        {keyboardMapping && (
           <div
-            className="rounded-xl p-4 fade-in"
+            className="rounded-xl p-4 transition-all"
             style={{
               background: 'rgba(245,158,11,0.06)',
-              border: '1px solid rgba(245,158,11,0.15)',
+              border: '1px solid rgba(245,158,11,0.2)',
             }}
           >
-            <div className="flex items-start gap-3">
-              <span className="text-lg flex-shrink-0">🔀</span>
-              <div>
-                <p className="text-sm font-semibold mb-1" style={{ color: '#fcd34d' }}>
-                  Cross-Platform Keyboard Mapping Active
-                </p>
-                <p className="text-xs leading-relaxed" style={{ color: '#78716c' }}>
-                  {status.peer_os?.toLowerCase().includes('mac')
-                    ? 'Your Windows Ctrl key is mapped to Mac Command (⌘). Alt → Option. Win key → Control. Shortcuts like Ctrl+C become Cmd+C automatically.'
-                    : 'Mac Command (⌘) is mapped to Windows Ctrl. Option → Alt. Control → Win key. Shortcuts like Cmd+C become Ctrl+C automatically.'}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-3 text-xs font-mono">
-                  {status.peer_os?.toLowerCase().includes('mac') ? (
-                    <>
-                      <span style={{ color: '#94a3b8' }}>Ctrl+C → ⌘C</span>
-                      <span style={{ color: '#94a3b8' }}>Ctrl+V → ⌘V</span>
-                      <span style={{ color: '#94a3b8' }}>Alt+Tab → ⌘Tab</span>
-                      <span style={{ color: '#94a3b8' }}>Win → ⌃ Ctrl</span>
-                    </>
-                  ) : (
-                    <>
-                      <span style={{ color: '#94a3b8' }}>⌘C → Ctrl+C</span>
-                      <span style={{ color: '#94a3b8' }}>⌘V → Ctrl+V</span>
-                      <span style={{ color: '#94a3b8' }}>⌘Tab → Alt+Tab</span>
-                      <span style={{ color: '#94a3b8' }}>⌃ → Win</span>
-                    </>
-                  )}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <span className="text-xl flex-shrink-0">🔀</span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold" style={{ color: '#fcd34d' }}>
+                      Universal Keyboard Mapping Active
+                    </p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                      Cross-Platform KVM
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed mt-0.5" style={{ color: '#94a3b8' }}>
+                    {status.peer_os?.toLowerCase().includes('mac')
+                      ? 'Windows Ctrl translates to Mac Command (⌘), Alt → Option (⌥), Win → Control (⌃). Redo (Ctrl+Y → ⌘ShiftZ), App Switcher (Alt+Tab → ⌘Tab), Force Quit.'
+                      : 'Mac Command (⌘) translates to Windows Ctrl, Option (⌥) → Alt, Control (⌃) → Win key. Shortcuts map dynamically to Windows conventions.'}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-mono">
+                    <span className="px-1.5 py-0.5 rounded bg-black/40 border border-white/5 text-amber-200">Ctrl+C ↔ ⌘C</span>
+                    <span className="px-1.5 py-0.5 rounded bg-black/40 border border-white/5 text-amber-200">Ctrl+V ↔ ⌘V</span>
+                    <span className="px-1.5 py-0.5 rounded bg-black/40 border border-white/5 text-amber-200">Alt+Tab ↔ ⌘Tab</span>
+                    <span className="px-1.5 py-0.5 rounded bg-black/40 border border-white/5 text-amber-200">Ctrl+Shift+Esc ↔ ⌘OptEsc</span>
+                    <span className="px-1.5 py-0.5 rounded bg-black/40 border border-white/5 text-amber-200">Win+D ↔ F11 Desktop</span>
+                  </div>
                 </div>
               </div>
+
+              <button
+                onClick={() => setShowShortcutsModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer select-none self-end sm:self-auto"
+                style={{
+                  background: 'rgba(245,158,11,0.15)',
+                  color: '#fbbf24',
+                  border: '1px solid rgba(245,158,11,0.3)',
+                }}
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+                <span>Configure & View All (60+)</span>
+              </button>
             </div>
           </div>
         )}
@@ -318,12 +320,33 @@ export const Dashboard: React.FC = () => {
           className="flex flex-wrap items-center justify-between gap-3 pt-2"
           style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}
         >
-          <div className="flex items-center gap-4 text-xs" style={{ color: '#334155' }}>
-            <span>🔒 Local LAN only • No cloud servers</span>
+          <div className="flex items-center gap-4 text-xs" style={{ color: '#475569' }}>
+            <span>🔒 Local LAN only • Zero Cloud Dependency</span>
             <span>Port 42426</span>
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowShortcutsModal(true)}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-all cursor-pointer"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.07)',
+                color: '#94a3b8',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.color = '#fbbf24';
+                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(245,158,11,0.3)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.color = '#94a3b8';
+                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.07)';
+              }}
+            >
+              <Command className="h-3.5 w-3.5 text-amber-400" />
+              <span>Keyboard Shortcuts (60+)</span>
+            </button>
+
             <button
               onClick={() => setShowMacModal(true)}
               className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-all cursor-pointer"
@@ -350,6 +373,14 @@ export const Dashboard: React.FC = () => {
 
       {/* Mac Permissions Modal */}
       <MacPermissionsModal isOpen={showMacModal} onClose={() => setShowMacModal(false)} />
+
+      {/* Universal Keyboard Shortcuts Settings Modal */}
+      <KeyboardShortcutsSettings
+        isOpen={showShortcutsModal}
+        onClose={() => setShowShortcutsModal(false)}
+        systemInfo={systemInfo}
+        session={status.session}
+      />
     </div>
   );
 };

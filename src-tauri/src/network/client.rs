@@ -15,6 +15,9 @@ pub struct NetworkClient {
     client_id: String,
     device_name: String,
     os_name: String,
+    os_version: String,
+    architecture: String,
+    keyboard_layout: String,
     screen_width: u32,
     screen_height: u32,
 }
@@ -24,6 +27,9 @@ impl NetworkClient {
         client_id: String,
         device_name: String,
         os_name: String,
+        os_version: String,
+        architecture: String,
+        keyboard_layout: String,
         screen_width: u32,
         screen_height: u32,
     ) -> Self {
@@ -33,6 +39,9 @@ impl NetworkClient {
             client_id,
             device_name,
             os_name,
+            os_version,
+            architecture,
+            keyboard_layout,
             screen_width,
             screen_height,
         }
@@ -61,6 +70,9 @@ impl NetworkClient {
             os: self.os_name.clone(),
             screen_width: self.screen_width,
             screen_height: self.screen_height,
+            os_version: Some(self.os_version.clone()),
+            architecture: Some(self.architecture.clone()),
+            keyboard_layout: Some(self.keyboard_layout.clone()),
         });
 
         let encoded = serialize_message(&req)?;
@@ -100,6 +112,9 @@ impl NetworkClient {
             peer_screen_height: pair_resp.host_screen_height,
             role: "client".to_string(),
             connected_at: now,
+            peer_os_version: pair_resp.host_os_version,
+            peer_architecture: pair_resp.host_architecture,
+            peer_keyboard_layout: pair_resp.host_keyboard_layout,
         };
 
         info!("Successfully paired with host '{}' ({})", pair_resp.host_name, pair_resp.host_os);

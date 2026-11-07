@@ -11,6 +11,12 @@ pub struct ActiveSession {
     pub peer_screen_height: u32,
     pub role: String, // "host" or "client"
     pub connected_at: u64,
+    #[serde(default)]
+    pub peer_os_version: Option<String>,
+    #[serde(default)]
+    pub peer_architecture: Option<String>,
+    #[serde(default)]
+    pub peer_keyboard_layout: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +60,12 @@ pub struct PairRequestPayload {
     pub os: String,
     pub screen_width: u32,
     pub screen_height: u32,
+    #[serde(default)]
+    pub os_version: Option<String>,
+    #[serde(default)]
+    pub architecture: Option<String>,
+    #[serde(default)]
+    pub keyboard_layout: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +78,12 @@ pub struct PairResponsePayload {
     pub host_os: String,
     pub host_screen_width: u32,
     pub host_screen_height: u32,
+    #[serde(default)]
+    pub host_os_version: Option<String>,
+    #[serde(default)]
+    pub host_architecture: Option<String>,
+    #[serde(default)]
+    pub host_keyboard_layout: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +92,12 @@ pub struct PendingClientPayload {
     pub device_name: String,
     pub os: String,
     pub ip: String,
+    #[serde(default)]
+    pub os_version: Option<String>,
+    #[serde(default)]
+    pub architecture: Option<String>,
+    #[serde(default)]
+    pub keyboard_layout: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +133,8 @@ pub struct KeyEventPayload {
     pub key_char: Option<String>,
     pub state: u8, // 0 = Up, 1 = Down
     pub modifiers: u8, // Bitflags: 1=Shift, 2=Ctrl, 4=Alt, 8=Meta/Cmd
+    #[serde(default)]
+    pub source_os: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

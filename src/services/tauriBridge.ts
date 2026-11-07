@@ -1,9 +1,11 @@
 import type {
   ActiveSession,
   ConnectionStatus,
+  CustomModifierConfig,
   DeviceOS,
   DiscoveredDevice,
   HostPinResponse,
+  MappingMode,
   ScreenArrangementType,
   SystemInfo,
 } from '../types';
@@ -15,6 +17,14 @@ const isTauri =
     Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__));
 
 // Simulated in-memory state for development & browser testing
+let mockMappingMode: MappingMode = 'smart_universal';
+let mockCustomConfig: CustomModifierConfig = {
+  swap_ctrl_alt: false,
+  swap_cmd_alt: false,
+  capslock_as_ctrl: false,
+  enabled: true,
+};
+
 const mockState: {
   mode: 'idle' | 'hosting' | 'client' | 'connected';
   pin?: string;
@@ -298,6 +308,64 @@ export const api = {
         await invoke('open_accessibility_settings');
       } catch (err) {
         console.warn('Failed to open accessibility settings:', err);
+      }
+    }
+  },
+  async getKeyboardMappingMode(): Promise<MappingMode> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<MappingMode>('get_keyboard_mapping_mode');
+      } catch (err) {
+        console.warn('Failed to get keyboard mapping mode:', err);
+      }
+    }
+    return mockMappingMode;
+  },
+
+  async setKeyboardMappingMode(mode: MappingMode): Promise<void> {
+    mockMappingMode = mode;
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_keyboard_mapping_mode', { mode });
+      } catch (err) {
+        console.warn('Failed to set keyboard mapping mode:', err);
+      }
+    }
+  },
+
+  async getCustomModifierConfig(): Promise<CustomModifierConfig> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<CustomModifierConfig>('get_custom_modifier_config');
+      } catch (err) {
+        console.warn('Failed to get custom modifier config:', err);
+      }
+    }
+    return mockCustomConfig;
+  },
+
+  async setCustomModifierConfig(config: CustomModifierConfig): Promise<void> {
+    mockCustomConfig = config;
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_custom_modifier_config', { config });
+      } catch (err) {
+        console.warn('Failed to set custom modifier config:', err);
+      }
+    }
+  },
+
+  async releaseStuckKeys(): Promise<void> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('release_stuck_keys');
+      } catch (err) {
+        console.warn('Failed to release stuck keys:', err);
       }
     }
   },

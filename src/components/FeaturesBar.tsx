@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mouse, Keyboard, Clipboard, Shuffle } from 'lucide-react';
+import { Mouse, Keyboard, Clipboard, Shuffle, Settings2 } from 'lucide-react';
 
 interface FeaturesBarProps {
   mouseSharing: boolean;
@@ -10,6 +10,7 @@ interface FeaturesBarProps {
   setClipboardSharing: (v: boolean) => void;
   keyboardMapping: boolean;
   setKeyboardMapping: (v: boolean) => void;
+  onOpenShortcuts?: () => void;
 }
 
 interface FeatureToggle {
@@ -20,6 +21,7 @@ interface FeatureToggle {
   onChange: (v: boolean) => void;
   color: string;
   glowColor: string;
+  isShortcut?: boolean;
 }
 
 export const FeaturesBar: React.FC<FeaturesBarProps> = ({
@@ -31,6 +33,7 @@ export const FeaturesBar: React.FC<FeaturesBarProps> = ({
   setClipboardSharing,
   keyboardMapping,
   setKeyboardMapping,
+  onOpenShortcuts,
 }) => {
   const features: FeatureToggle[] = [
     {
@@ -63,21 +66,28 @@ export const FeaturesBar: React.FC<FeaturesBarProps> = ({
     {
       icon: <Shuffle className="h-4 w-4" />,
       label: 'Key Mapping',
-      desc: 'Win↔Mac shortcut translate',
+      desc: 'Cross-platform translate',
       value: keyboardMapping,
       onChange: setKeyboardMapping,
       color: '#f59e0b',
       glowColor: 'rgba(245,158,11,0.15)',
+      isShortcut: true,
     },
   ];
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       {features.map((f) => (
-        <button
+        <div
           key={f.label}
-          onClick={() => f.onChange(!f.value)}
-          className="flex items-center gap-3 rounded-xl p-3 text-left transition-all duration-150 cursor-pointer select-none w-full"
+          onClick={() => {
+            if (f.isShortcut && onOpenShortcuts) {
+              onOpenShortcuts();
+            } else {
+              f.onChange(!f.value);
+            }
+          }}
+          className="flex items-center gap-3 rounded-xl p-3 text-left transition-all duration-150 cursor-pointer select-none w-full relative group"
           style={{
             background: f.value ? f.glowColor : 'rgba(255,255,255,0.02)',
             border: `1px solid ${f.value ? f.color + '44' : 'rgba(255,255,255,0.07)'}`,
@@ -103,8 +113,21 @@ export const FeaturesBar: React.FC<FeaturesBarProps> = ({
               {f.desc}
             </p>
           </div>
-          {/* Toggle dot */}
-          <div className="ml-auto flex-shrink-0">
+
+          {/* Right action / toggle */}
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+            {f.isShortcut && onOpenShortcuts && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenShortcuts();
+                }}
+                title="Configure Shortcuts"
+                className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-amber-400 transition-colors"
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+              </button>
+            )}
             <div
               className="h-4 w-4 rounded-full border-2 transition-all"
               style={{
@@ -114,7 +137,7 @@ export const FeaturesBar: React.FC<FeaturesBarProps> = ({
               }}
             />
           </div>
-        </button>
+        </div>
       ))}
     </div>
   );

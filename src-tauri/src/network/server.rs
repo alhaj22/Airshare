@@ -18,6 +18,9 @@ pub struct NetworkServer {
     is_running: Arc<RwLock<bool>>,
     host_name: String,
     host_os: String,
+    host_os_version: String,
+    host_architecture: String,
+    host_keyboard_layout: String,
     screen_width: u32,
     screen_height: u32,
 }
@@ -27,6 +30,9 @@ impl NetworkServer {
         pin_manager: SharedPinManager,
         host_name: String,
         host_os: String,
+        host_os_version: String,
+        host_architecture: String,
+        host_keyboard_layout: String,
         screen_width: u32,
         screen_height: u32,
     ) -> Self {
@@ -36,6 +42,9 @@ impl NetworkServer {
             is_running: Arc::new(RwLock::new(false)),
             host_name,
             host_os,
+            host_os_version,
+            host_architecture,
+            host_keyboard_layout,
             screen_width,
             screen_height,
         }
@@ -77,6 +86,9 @@ impl NetworkServer {
 
         let host_name = self.host_name.clone();
         let host_os = self.host_os.clone();
+        let host_os_ver = self.host_os_version.clone();
+        let host_arch = self.host_architecture.clone();
+        let host_kb_layout = self.host_keyboard_layout.clone();
         let screen_w = self.screen_width;
         let screen_h = self.screen_height;
 
@@ -91,6 +103,9 @@ impl NetworkServer {
                         let active_cl = active_client_tx.clone();
                         let h_name = host_name.clone();
                         let h_os = host_os.clone();
+                        let h_ver = host_os_ver.clone();
+                        let h_arch = host_arch.clone();
+                        let h_layout = host_kb_layout.clone();
 
                         tokio::spawn(async move {
                             if let Err(e) = Self::handle_client(
@@ -102,6 +117,9 @@ impl NetworkServer {
                                 active_cl,
                                 h_name,
                                 h_os,
+                                h_ver,
+                                h_arch,
+                                h_layout,
                                 screen_w,
                                 screen_h,
                             ).await {
@@ -144,6 +162,9 @@ impl NetworkServer {
         active_client: Arc<RwLock<Option<mpsc::UnboundedSender<NetworkMessage>>>>,
         host_name: String,
         host_os: String,
+        host_os_version: String,
+        host_architecture: String,
+        host_keyboard_layout: String,
         screen_w: u32,
         screen_h: u32,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -205,6 +226,9 @@ impl NetworkServer {
                     session_id: Some(session_id.clone()),
                     host_name,
                     host_os,
+                    host_os_version: Some(host_os_version),
+                    host_architecture: Some(host_architecture),
+                    host_keyboard_layout: Some(host_keyboard_layout),
                     host_screen_width: screen_w,
                     host_screen_height: screen_h,
                 });
@@ -221,6 +245,9 @@ impl NetworkServer {
                     peer_screen_height: pair_request.screen_height,
                     role: "host".to_string(),
                     connected_at: now,
+                    peer_os_version: pair_request.os_version,
+                    peer_architecture: pair_request.architecture,
+                    peer_keyboard_layout: pair_request.keyboard_layout,
                 };
                 let session_json = serde_json::to_string(&session).unwrap_or_default();
                 let _ = status_tx.send(format!("CONNECTED:{}", session_json));
@@ -276,6 +303,9 @@ impl NetworkServer {
                     session_id: None,
                     host_name,
                     host_os,
+                    host_os_version: Some(host_os_version),
+                    host_architecture: Some(host_architecture),
+                    host_keyboard_layout: Some(host_keyboard_layout),
                     host_screen_width: 0,
                     host_screen_height: 0,
                 });

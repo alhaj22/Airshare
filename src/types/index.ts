@@ -14,6 +14,35 @@ export type ActiveScreenType = 'host' | 'client';
 
 export type AppPage = 'dashboard' | 'settings' | 'devices' | 'about';
 
+export type MappingMode = 'smart_universal' | 'raw_passthrough' | 'custom';
+
+export interface CustomModifierConfig {
+  swap_ctrl_alt: boolean;
+  swap_cmd_alt: boolean;
+  capslock_as_ctrl: boolean;
+  enabled: boolean;
+}
+
+export type ShortcutCategory =
+  | 'basic'
+  | 'window'
+  | 'file'
+  | 'screenshot'
+  | 'browser'
+  | 'text'
+  | 'system'
+  | 'multimonitor';
+
+export interface ShortcutItem {
+  id: string;
+  category: ShortcutCategory;
+  name: string;
+  description: string;
+  windows: string;
+  macos: string;
+  linux: string;
+}
+
 export interface DiscoveredDevice {
   device_id: string;
   device_name: string;
@@ -26,6 +55,9 @@ export interface DiscoveredDevice {
 export interface SystemInfo {
   device_name: string;
   os: string;
+  os_version?: string;
+  architecture?: string;
+  keyboard_layout?: string;
   local_ip: string;
   screen_width: number;
   screen_height: number;
@@ -42,6 +74,9 @@ export interface ActiveSession {
   peer_device_id: string;
   peer_name: string;
   peer_os: string;
+  peer_os_version?: string;
+  peer_architecture?: string;
+  peer_keyboard_layout?: string;
   peer_ip: string;
   peer_screen_width: number;
   peer_screen_height: number;

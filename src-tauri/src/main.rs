@@ -1,5 +1,72 @@
-// Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+fn detect_system_details() -> (String, String, String, String) {
+    let os_name = if cfg!(windows) {
+        "Windows".to_string()
+    } else if cfg!(target_os = "macos") {
+        "macOS".to_string()
+    } else {
+        "Linux".to_string()
+    };
+
+    let arch = std::env::consts::ARCH.to_string();
+
+    #[cfg(windows)]
+    let os_ver = {
+        use std::process::Command;
+        let mut ver = "Windows 10/11".to_string();
+        if let Ok(output) = Command::new("cmd").args(["/c", "ver"]).output() {
+            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !s.is_empty() {
+                ver = s;
+            }
+        }
+        ver
+    };
+
+    #[cfg(target_os = "macos")]
+    let os_ver = {
+        use std::process::Command;
+        let mut ver = "macOS".to_string();
+        if let Ok(output) = Command::new("sw_vers").arg("-productVersion").output() {
+            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !s.is_empty() {
+                ver = format!("macOS {}", s);
+            }
+        }
+        ver
+    };
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let os_ver = "Linux".to_string();
+
+    #[cfg(windows)]
+    let kb_layout = {
+        unsafe {
+            use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayoutNameA;
+            let mut buf = [0u8; 9];
+            if GetKeyboardLayoutNameA(buf.as_mut_ptr()) != 0 {
+                let name = String::from_utf8_lossy(&buf[..8]).to_string();
+                match name.as_str() {
+                    "00000409" => "US (QWERTY)".to_string(),
+                    "00000809" => "UK (QWERTY)".to_string(),
+                    "00000407" => "German (QWERTZ)".to_string(),
+                    "0000040C" => "French (AZERTY)".to_string(),
+                    _ => format!("Layout ({})", name),
+                }
+            } else {
+                "US (QWERTY)".to_string()
+            }
+        }
+    };
+
+    #[cfg(not(windows))]
+    let kb_layout = "Standard QWERTY".to_string();
+
+    (os_name, os_ver, arch, kb_layout)
+}
+
+// Prevents additional console window on Windows in release
+
 
 mod clipboard;
 mod discovery;
@@ -79,6 +146,9 @@ fn get_screen_resolution() -> (u32, u32) {
 pub struct SystemInfo {
     pub device_name: String,
     pub os: String,
+    pub os_version: String,
+    pub architecture: String,
+    pub keyboard_layout: String,
     pub local_ip: String,
     pub screen_width: u32,
     pub screen_height: u32,
@@ -153,6 +223,9 @@ async fn create_connection_pin(
         state.pin_manager.clone(),
         state.sys_info.device_name.clone(),
         state.sys_info.os.clone(),
+        state.sys_info.os_version.clone(),
+        state.sys_info.architecture.clone(),
+        state.sys_info.keyboard_layout.clone(),
         screen_w,
         screen_h,
     );
@@ -192,6 +265,7 @@ async fn create_connection_pin(
             } else if status_str == "DISCONNECTED" {
                 log::info!("Peer disconnected from Host. Teardown active session immediately.");
                 *session_slot.write().await = None;
+                crate::keyboard::mapping::KeyboardMappingEngine::release_stuck_keys();
                 pin_mgr_clone.write().await.disconnect();
                 disc_clone.set_is_host(false).await;
                 edge_mon_status.set_active_screen(ActiveScreen::Host).await;
@@ -276,7 +350,7 @@ async fn create_connection_pin(
                     m_sim.scroll(p.delta_x, p.delta_y);
                 }
                 NetworkMessage::KeyEvent(p) => {
-                    k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref(), p.modifiers);
+                    k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref(), p.modifiers, p.source_os.as_deref());
                 }
                 NetworkMessage::Disconnect { reason } => {
                     log::info!("Peer explicitly disconnected: {}. Ending session.", reason);
@@ -331,6 +405,9 @@ async fn join_connection(
         format!("dev_{}", rand::random::<u32>()),
         state.sys_info.device_name.clone(),
         state.sys_info.os.clone(),
+        state.sys_info.os_version.clone(),
+        state.sys_info.architecture.clone(),
+        state.sys_info.keyboard_layout.clone(),
         screen_w,
         screen_h,
     );
@@ -369,6 +446,7 @@ async fn join_connection(
             if status_str == "DISCONNECTED" {
                 log::info!("Disconnected from Host. Teardown active session immediately.");
                 *session_slot.write().await = None;
+                crate::keyboard::mapping::KeyboardMappingEngine::release_stuck_keys();
                 if let Some(mut cl) = client_slot.write().await.take() {
                     cl.disconnect().await;
                 }
@@ -430,7 +508,7 @@ async fn join_connection(
                     m_sim.scroll(p.delta_x, p.delta_y);
                 }
                 NetworkMessage::KeyEvent(p) => {
-                    k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref(), p.modifiers);
+                    k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref(), p.modifiers, p.source_os.as_deref());
                 }
                 NetworkMessage::ClipboardSync(p) => {
                     clip_watcher.apply_incoming_text(&p.text, p.hash).await;
@@ -561,6 +639,7 @@ async fn disconnect_all(
         c.disconnect().await;
     }
 
+    crate::keyboard::mapping::KeyboardMappingEngine::release_stuck_keys();
     state.edge_monitor.set_active_screen(ActiveScreen::Host).await;
     state.keyboard_hook.update_active_screen(ActiveScreen::Host);
     clear_keyboard_hook_sender();
@@ -712,6 +791,45 @@ fn dirs_fallback() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("./downloads"))
 }
 
+
+#[tauri::command]
+fn get_keyboard_mapping_mode() -> String {
+    match crate::keyboard::mapping::get_mapping_mode() {
+        crate::keyboard::mapping::MappingMode::SmartUniversal => "smart_universal".to_string(),
+        crate::keyboard::mapping::MappingMode::RawPassthrough => "raw_passthrough".to_string(),
+        crate::keyboard::mapping::MappingMode::Custom => "custom".to_string(),
+    }
+}
+
+#[tauri::command]
+fn set_keyboard_mapping_mode(mode: String) -> Result<(), String> {
+    let m = match mode.as_str() {
+        "smart_universal" => crate::keyboard::mapping::MappingMode::SmartUniversal,
+        "raw_passthrough" => crate::keyboard::mapping::MappingMode::RawPassthrough,
+        "custom" => crate::keyboard::mapping::MappingMode::Custom,
+        _ => return Err("Invalid mapping mode".to_string()),
+    };
+    crate::keyboard::mapping::set_mapping_mode(m);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_custom_modifier_config() -> crate::keyboard::mapping::CustomModifierConfig {
+    crate::keyboard::mapping::get_custom_config()
+}
+
+#[tauri::command]
+fn set_custom_modifier_config(config: crate::keyboard::mapping::CustomModifierConfig) -> Result<(), String> {
+    crate::keyboard::mapping::set_custom_config(config);
+    Ok(())
+}
+
+#[tauri::command]
+fn release_stuck_keys() -> Result<(), String> {
+    crate::keyboard::mapping::KeyboardMappingEngine::release_stuck_keys();
+    Ok(())
+}
+
 fn main() {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
@@ -732,9 +850,13 @@ fn main() {
     let (screen_w, screen_h) = get_screen_resolution();
     log::info!("AirDesk initialized for resolution {}x{}", screen_w, screen_h);
 
+    let (det_os, det_ver, det_arch, det_layout) = detect_system_details();
     let sys_info = SystemInfo {
         device_name: hostname.clone(),
-        os: os_name.clone(),
+        os: det_os,
+        os_version: det_ver,
+        architecture: det_arch,
+        keyboard_layout: det_layout,
         local_ip,
         screen_width: screen_w,
         screen_height: screen_h,
@@ -797,7 +919,12 @@ fn main() {
             get_connection_status,
             toggle_active_screen,
             check_accessibility,
-            open_accessibility_settings
+            open_accessibility_settings,
+            get_keyboard_mapping_mode,
+            set_keyboard_mapping_mode,
+            get_custom_modifier_config,
+            set_custom_modifier_config,
+            release_stuck_keys
         ])
         .run(tauri::generate_context!())
         .expect("error while running AirDesk application");

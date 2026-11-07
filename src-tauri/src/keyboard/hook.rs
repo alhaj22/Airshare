@@ -185,6 +185,7 @@ impl KeyboardHookManager {
 
                                 if (ctrl && alt) || vk_code == 0x13 || is_triple_esc {
                                     info!("Emergency recall activated! Returning control to Host.");
+                                    crate::keyboard::mapping::KeyboardMappingEngine::release_stuck_keys();
                                     set_current_active_screen(ActiveScreen::Host);
                                     if let Ok(sw_guard) = SWITCH_BACK_TX.lock() {
                                         if let Some(sw_tx) = &*sw_guard {
@@ -223,6 +224,7 @@ impl KeyboardHookManager {
                                             key_char: ch,
                                             state: if is_down { 1 } else { 0 },
                                             modifiers,
+                                            source_os: Some(if cfg!(windows) { "windows".to_string() } else if cfg!(target_os = "macos") { "macos".to_string() } else { "linux".to_string() }),
                                         }));
 
                                         if res.is_ok() {
@@ -366,6 +368,7 @@ mod macos_keyboard {
 
             if (cmd_or_ctrl && alt) || is_triple_esc {
                 log::info!("Emergency recall activated! Returning control to Host.");
+                crate::keyboard::mapping::KeyboardMappingEngine::release_stuck_keys();
                 set_current_active_screen(ActiveScreen::Host);
                 if let Ok(sw_guard) = SWITCH_BACK_TX.lock() {
                     if let Some(sw_tx) = &*sw_guard {
@@ -381,16 +384,16 @@ mod macos_keyboard {
         if active == ActiveScreen::Client {
             let mut modifiers: u8 = 0;
             if (flags & 0x00020000) != 0 {
-                modifiers |= 1; // Shift
-            }
-            if (flags & 0x00100000) != 0 {
-                modifiers |= 2; // Command -> Ctrl
-            }
-            if (flags & 0x00080000) != 0 {
-                modifiers |= 4; // Option -> Alt
+                modifiers |= 1; // Shift (MOD_SHIFT)
             }
             if (flags & 0x00040000) != 0 {
-                modifiers |= 8; // Control -> Win
+                modifiers |= 2; // Control (MOD_CTRL)
+            }
+            if (flags & 0x00080000) != 0 {
+                modifiers |= 4; // Option/Alt (MOD_ALT)
+            }
+            if (flags & 0x00100000) != 0 {
+                modifiers |= 8; // Command (MOD_META)
             }
 
             let vk = mac_key_to_win_vk(mac_key);
@@ -412,6 +415,7 @@ mod macos_keyboard {
                             key_char: None,
                             state: if mod_down { 1 } else { 0 },
                             modifiers,
+                            source_os: Some("macos".to_string()),
                         }));
                         if res.is_ok() {
                             sent = true;
@@ -432,6 +436,7 @@ mod macos_keyboard {
                             key_char: None,
                             state: if is_down { 1 } else { 0 },
                             modifiers,
+                            source_os: Some("macos".to_string()),
                         }));
                         if res.is_ok() {
                             sent = true;

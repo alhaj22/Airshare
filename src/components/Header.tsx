@@ -1,11 +1,12 @@
 import React from 'react';
-import { Zap, Monitor, Wifi, ChevronDown } from 'lucide-react';
+import { Zap, Monitor, Wifi, ChevronDown, Command } from 'lucide-react';
 import type { ConnectionStatus, SystemInfo } from '../types';
 
 interface HeaderProps {
   systemInfo: SystemInfo | null;
   status: ConnectionStatus;
   onToggleActiveScreen: () => void;
+  onOpenShortcuts?: () => void;
 }
 
 function getOsIcon(os: string) {
@@ -44,7 +45,12 @@ function getStatusInfo(status: ConnectionStatus) {
   }
 }
 
-export const Header: React.FC<HeaderProps> = ({ systemInfo, status, onToggleActiveScreen }) => {
+export const Header: React.FC<HeaderProps> = ({
+  systemInfo,
+  status,
+  onToggleActiveScreen,
+  onOpenShortcuts,
+}) => {
   const { dot, label, pulse } = getStatusInfo(status);
   const isConnected = status.mode === 'connected';
 
@@ -122,8 +128,24 @@ export const Header: React.FC<HeaderProps> = ({ systemInfo, status, onToggleActi
         )}
       </div>
 
-      {/* Right — Device info */}
+      {/* Right — Shortcuts & Device info */}
       <div className="flex items-center gap-2">
+        {onOpenShortcuts && (
+          <button
+            onClick={onOpenShortcuts}
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer select-none"
+            style={{
+              background: 'rgba(245,158,11,0.12)',
+              color: '#fbbf24',
+              border: '1px solid rgba(245,158,11,0.25)',
+            }}
+            title="Universal Cross-Platform Keyboard Shortcuts"
+          >
+            <Command className="h-3 w-3" />
+            <span className="hidden sm:inline">Shortcuts</span>
+          </button>
+        )}
+
         {systemInfo?.local_ip && (
           <div
             className="hidden sm:flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs"

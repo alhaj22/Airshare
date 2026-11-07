@@ -125,14 +125,15 @@ mod macos {
             0x6E => 65, // Numpad .
             0x6F => 75, // Numpad /
 
-            // Modifiers: Windows Ctrl maps to Mac Command for natural shortcuts (Cmd+C/V/Z)
-            0x11 | 0xA2 => 55, // Left Ctrl -> Mac Command
-            0xA3 => 54,        // Right Ctrl -> Mac Right Command
-            0x5B | 0x5C => 59, // Windows Key -> Mac Control
-            0x10 | 0xA0 => 56, // Left Shift -> Mac Left Shift
-            0xA1 => 60,        // Right Shift -> Mac Right Shift
-            0x12 | 0xA4 => 58, // Left Alt -> Mac Option (Alt)
-            0xA5 => 61,        // Right Alt -> Mac Right Option
+            // Modifiers (Normalized):
+            0x5B => 55,        // Win / Meta -> Mac Command (55)
+            0x5C => 54,        // Right Win / Meta -> Mac Right Command (54)
+            0x11 | 0xA2 => 59, // Left Ctrl -> Mac Control (59)
+            0xA3 => 62,        // Right Ctrl -> Mac Right Control (62)
+            0x10 | 0xA0 => 56, // Left Shift -> Mac Left Shift (56)
+            0xA1 => 60,        // Right Shift -> Mac Right Shift (60)
+            0x12 | 0xA4 => 58, // Left Alt -> Mac Option (58)
+            0xA5 => 61,        // Right Alt -> Mac Right Option (61)
 
             // Symbols & Punctuation
             0xBA => 41, // ;
@@ -229,11 +230,15 @@ pub fn mac_key_to_win_vk(mac_key: u16) -> u32 {
         103 => 0x7A, // F11
         111 => 0x7B, // F12
 
-        // Modifiers: Mac Command translates to Windows Ctrl!
-        55 | 54 => 0x11, // Mac Command -> Windows VK_CONTROL
-        58 | 61 => 0x12, // Mac Option/Alt -> Windows VK_MENU (Alt)
-        59 | 62 => 0x5B, // Mac Control -> Windows VK_LWIN
-        56 | 60 => 0x10, // Mac Shift -> Windows VK_SHIFT
+        // Modifiers (Normalized):
+        55 => 0x5B, // Mac Left Command -> VK_LWIN (Meta)
+        54 => 0x5C, // Mac Right Command -> VK_RWIN (Meta)
+        58 => 0xA4, // Mac Left Option -> VK_LMENU (Alt)
+        61 => 0xA5, // Mac Right Option -> VK_RMENU (Alt)
+        59 => 0xA2, // Mac Left Control -> VK_LCONTROL
+        62 => 0xA3, // Mac Right Control -> VK_RCONTROL
+        56 => 0xA0, // Mac Left Shift -> VK_LSHIFT
+        60 => 0xA1, // Mac Right Shift -> VK_RSHIFT
 
         // Symbols & Punctuation
         41 => 0xBA, // ;
@@ -277,16 +282,45 @@ impl KeyboardSimulator {
         Self
     }
 
-    pub fn key_event(&self, vk_code: u32, is_down: bool, key_char: Option<&str>, _modifiers: u8) {
+        pub fn release_all_modifiers(&self) {
+        crate::keyboard::mapping::KeyboardMappingEngine::release_stuck_keys();
+    }
+
+    pub fn key_event(
+        &self,
+        vk_code: u32,
+        is_down: bool,
+        key_char: Option<&str>,
+        raw_modifiers: u8,
+        source_os: Option<&str>,
+    ) {
+        let target_os = if cfg!(windows) {
+            "windows"
+        } else if cfg!(target_os = "macos") {
+            "macos"
+        } else {
+            "linux"
+        };
+
+        let source = source_os.unwrap_or(if target_os == "macos" { "windows" } else { "macos" });
+        let mode = crate::keyboard::mapping::get_mapping_mode();
+
+        let (translated_vk, _translated_mods) = crate::keyboard::mapping::KeyboardMappingEngine::translate_key_combination(
+            vk_code,
+            raw_modifiers,
+            source,
+            target_os,
+            mode,
+        );
+
         #[cfg(windows)]
         unsafe {
-            if vk_code > 0 {
-                // Determine whether this key requires the KEYEVENTF_EXTENDEDKEY flag on Windows:
+            if translated_vk > 0 {
                 let is_extended = matches!(
-                    vk_code,
+                    translated_vk,
                     0x21..=0x28 | 0x2D | 0x2E | 0x5B | 0x5C | 0xA3 | 0xA5
                 );
-                let scan = MapVirtualKeyW(vk_code, MAPVK_VK_TO_VSC) as u16;
+                let scan = MapVirtualKeyW(translated_vk, MAPVK_VK_TO_VSC) as u16;
 
                 let mut flags = if is_down { 0 } else { KEYEVENTF_KEYUP };
                 if is_extended {
@@ -297,7 +331,7 @@ impl KeyboardSimulator {
                     r#type: INPUT_KEYBOARD,
                     Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
                         ki: KEYBDINPUT {
-                            wVk: vk_code as u16,
+                            wVk: translated_vk as u16,
                             wScan: scan,
                             dwFlags: flags,
                             time: 0,
@@ -329,14 +363,13 @@ impl KeyboardSimulator {
         #[cfg(target_os = "macos")]
         unsafe {
             use macos::*;
-            let modifiers = _modifiers;
-            let mac_code = win_vk_to_mac_key(vk_code);
+            let mac_code = win_vk_to_mac_key(translated_vk);
 
             let mut cg_flags: u64 = 0;
-            if (modifiers & 1) != 0 { cg_flags |= 0x00020000; } // Shift
-            if (modifiers & 2) != 0 { cg_flags |= 0x00100000; } // Command (⌘)
-            if (modifiers & 4) != 0 { cg_flags |= 0x00080000; } // Option (⌥)
-            if (modifiers & 8) != 0 { cg_flags |= 0x00040000; } // Control (^)
+            if (_translated_mods & crate::keyboard::mapping::MOD_SHIFT) != 0 { cg_flags |= 0x00020000; } // Shift
+            if (_translated_mods & crate::keyboard::mapping::MOD_CTRL)  != 0 { cg_flags |= 0x00040000; } // Control (^)
+            if (_translated_mods & crate::keyboard::mapping::MOD_ALT)   != 0 { cg_flags |= 0x00080000; } // Option (⌥)
+            if (_translated_mods & crate::keyboard::mapping::MOD_META)  != 0 { cg_flags |= 0x00100000; } // Command (⌘)
 
             let source = CGEventSourceCreate(1 /* kCGEventSourceStateHIDSystemState */);
 
