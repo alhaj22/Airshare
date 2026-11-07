@@ -15,7 +15,21 @@ export function useAirDesk() {
   });
   const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
   const [screenArrangement, setScreenArrangement] =
-    useState<ScreenArrangementType>('host_left_client_right');
+    useState<ScreenArrangementType>(() => {
+      try {
+        const saved = localStorage.getItem('airdesk_arrangement');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.arr) return parsed.arr;
+        }
+      } catch {
+        // ignore
+      }
+      return 'host_left_client_right';
+    });
+
+  const lastSessionPeer = useRef<{ ip: string } | null>(null);
+  const reconnectTimer = useRef<number | null>(null);
 
   // Feature toggles
   const [mouseSharing, setMouseSharing] = useState(true);
@@ -48,6 +62,11 @@ export function useAirDesk() {
     let unlistenEnd: (() => void) | undefined;
 
     api.onSessionStarted((session) => {
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
+      lastSessionPeer.current = { ip: session.peer_ip };
       setStatus({
         mode: 'connected',
         session,
@@ -70,11 +89,25 @@ export function useAirDesk() {
       setStatus({ mode: 'idle', active_screen: 'host' });
       autoConnectAttempted.current = false;
       showNotification('Session ended. Input sharing stopped.', 'info');
+
+      // Attempt auto-reconnect if session dropped unexpectedly
+      if (lastSessionPeer.current?.ip) {
+        const targetIp = lastSessionPeer.current.ip;
+        showNotification('Connection lost. Reconnecting…', 'info');
+        reconnectTimer.current = window.setTimeout(() => {
+          joinHost(targetIp, 'auto_connect').catch(() => {
+            lastSessionPeer.current = null;
+          });
+        }, 2000);
+      }
     }).then((unsub) => { unlistenEnd = unsub; });
 
     return () => {
       unlistenStart?.();
       unlistenEnd?.();
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+      }
     };
   }, [showNotification]);
 
@@ -141,6 +174,7 @@ export function useAirDesk() {
     try {
       showNotification('Connecting…', 'info');
       const session = await api.joinConnection(hostIp, pin);
+      lastSessionPeer.current = { ip: hostIp };
       setStatus({
         mode: 'connected',
         session,
@@ -165,6 +199,11 @@ export function useAirDesk() {
 
   const disconnect = async () => {
     try {
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
+      lastSessionPeer.current = null;
       await api.disconnectAll();
       setStatus({ mode: 'idle', active_screen: 'host' });
       showNotification('Disconnected', 'info');
@@ -173,9 +212,18 @@ export function useAirDesk() {
     }
   };
 
-  const updateArrangement = async (arr: ScreenArrangementType, vOffset?: number) => {
+  const updateArrangement = async (
+    arr: ScreenArrangementType,
+    vOffset?: number,
+    hOffset?: number
+  ) => {
     setScreenArrangement(arr);
-    await api.setScreenArrangement(arr, vOffset);
+    try {
+      localStorage.setItem('airdesk_arrangement', JSON.stringify({ arr, vOffset, hOffset }));
+    } catch {
+      // ignore
+    }
+    await api.setScreenArrangement(arr, vOffset, hOffset);
   };
 
   const toggleActiveScreen = async () => {

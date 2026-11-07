@@ -190,7 +190,11 @@ export const api = {
     return mockState.discoveredDevices;
   },
 
-  async setScreenArrangement(arrangement: ScreenArrangementType, verticalOffset?: number): Promise<void> {
+  async setScreenArrangement(
+    arrangement: ScreenArrangementType,
+    verticalOffset?: number,
+    horizontalOffset?: number
+  ): Promise<void> {
     mockState.arrangement = arrangement;
     if (isTauri) {
       try {
@@ -198,6 +202,7 @@ export const api = {
         await invoke('set_screen_arrangement', {
           arrangement,
           verticalOffset: verticalOffset !== undefined ? verticalOffset : null,
+          horizontalOffset: horizontalOffset !== undefined ? horizontalOffset : null,
         });
       } catch (err) {
         console.warn('Failed to set screen arrangement', err);

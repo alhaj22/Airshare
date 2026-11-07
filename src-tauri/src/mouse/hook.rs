@@ -29,6 +29,7 @@ lazy_static::lazy_static! {
     static ref REMOTE_SCREEN_SIZE: std::sync::RwLock<(f32, f32)> = std::sync::RwLock::new((1920.0, 1080.0));
     static ref LAST_CURSOR: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((0, 0));
     static ref VERTICAL_OFFSET_RATIO: std::sync::RwLock<f32> = std::sync::RwLock::new(0.0);
+    static ref HORIZONTAL_OFFSET_RATIO: std::sync::RwLock<f32> = std::sync::RwLock::new(0.0);
     static ref VIRTUAL_REMOTE_POS: std::sync::RwLock<(f32, f32)> = std::sync::RwLock::new((0.0, 0.5));
     static ref LAST_SWITCH_TIME: std::sync::RwLock<Option<std::time::Instant>> = std::sync::RwLock::new(None);
 }
@@ -98,6 +99,12 @@ impl MouseEdgeMonitor {
         }
     }
 
+    pub async fn set_horizontal_offset(&self, offset: f32) {
+        if let Ok(mut off) = HORIZONTAL_OFFSET_RATIO.write() {
+            *off = offset;
+        }
+    }
+
     pub async fn get_active_screen(&self) -> ActiveScreen {
         get_current_active_screen()
     }
@@ -114,7 +121,6 @@ impl MouseEdgeMonitor {
             unsafe {
                 if screen == ActiveScreen::Host {
                     windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor(std::ptr::null());
-                    // Center cursor safely on host screen away from edge
                     windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos(center_x, center_y);
                 } else {
                     windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos(center_x, center_y);
@@ -183,11 +189,13 @@ impl MouseEdgeMonitor {
 
                         let active_screen = CURRENT_ACTIVE_SCREEN.read().map(|s| *s).unwrap_or(ActiveScreen::Host);
                         let arrangement = CURRENT_ARRANGEMENT.read().map(|a| *a).unwrap_or(ScreenArrangement::HostLeftClientRight);
-                        let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1366, 768));
-                        let (rem_w, rem_h) = REMOTE_SCREEN_SIZE.read().map(|d| *d).unwrap_or((1440.0, 900.0));
+                        let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1920, 1080));
+                        let (rem_w, rem_h) = REMOTE_SCREEN_SIZE.read().map(|d| *d).unwrap_or((1920.0, 1080.0));
+                        let v_off = VERTICAL_OFFSET_RATIO.read().map(|o| *o).unwrap_or(0.0);
+                        let h_off = HORIZONTAL_OFFSET_RATIO.read().map(|o| *o).unwrap_or(0.0);
 
                         let in_cooldown = if let Ok(t_guard) = LAST_SWITCH_TIME.read() {
-                            t_guard.map(|t| t.elapsed().as_millis() < 400).unwrap_or(false)
+                            t_guard.map(|t| t.elapsed().as_millis() < 300).unwrap_or(false)
                         } else {
                             false
                         };
@@ -197,35 +205,38 @@ impl MouseEdgeMonitor {
                                 return CallNextHookEx(0, n_code, w_param, l_param);
                             }
 
-                            // Boundary detection to cross over to remote device
-                            let crossed = match arrangement {
-                                ScreenArrangement::HostLeftClientRight => x >= screen_w - 2,
-                                ScreenArrangement::HostRightClientLeft => x <= 1,
-                                ScreenArrangement::HostTopClientBottom => y >= screen_h - 2,
-                                ScreenArrangement::HostBottomClientTop => y <= 1,
+                            // Precise geometric boundary detection to cross over to remote device
+                            let (crossed, entry_edge, entry_x_ratio, entry_y_ratio) = match arrangement {
+                                ScreenArrangement::HostLeftClientRight => {
+                                    let at_edge = x >= screen_w - 2;
+                                    let rel_y = (y as f32) - (v_off * screen_h as f32);
+                                    let y_ratio = (rel_y / rem_h).clamp(0.0, 1.0);
+                                    (at_edge, "left", 0.01f32, y_ratio)
+                                }
+                                ScreenArrangement::HostRightClientLeft => {
+                                    let at_edge = x <= 1;
+                                    let rel_y = (y as f32) - (v_off * screen_h as f32);
+                                    let y_ratio = (rel_y / rem_h).clamp(0.0, 1.0);
+                                    (at_edge, "right", 0.99f32, y_ratio)
+                                }
+                                ScreenArrangement::HostTopClientBottom => {
+                                    let at_edge = y >= screen_h - 2;
+                                    let rel_x = (x as f32) - (h_off * screen_w as f32);
+                                    let x_ratio = (rel_x / rem_w).clamp(0.0, 1.0);
+                                    (at_edge, "top", x_ratio, 0.01f32)
+                                }
+                                ScreenArrangement::HostBottomClientTop => {
+                                    let at_edge = y <= 1;
+                                    let rel_x = (x as f32) - (h_off * screen_w as f32);
+                                    let x_ratio = (rel_x / rem_w).clamp(0.0, 1.0);
+                                    (at_edge, "bottom", x_ratio, 0.99f32)
+                                }
                             };
 
                             if crossed {
-                                let offset = VERTICAL_OFFSET_RATIO.read().map(|o| *o).unwrap_or(0.0);
-                                let y_ratio = ((y as f32 / screen_h as f32) - offset).clamp(0.0, 1.0);
-                                let x_ratio = (x as f32 / screen_w as f32).clamp(0.0, 1.0);
-
                                 // Initialize virtual remote cursor position properly based on arrangement
                                 if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
-                                    match arrangement {
-                                        ScreenArrangement::HostLeftClientRight => {
-                                            *rpos = (10.0, y_ratio * rem_h);
-                                        }
-                                        ScreenArrangement::HostRightClientLeft => {
-                                            *rpos = (rem_w - 10.0, y_ratio * rem_h);
-                                        }
-                                        ScreenArrangement::HostTopClientBottom => {
-                                            *rpos = (x_ratio * rem_w, 10.0);
-                                        }
-                                        ScreenArrangement::HostBottomClientTop => {
-                                            *rpos = (x_ratio * rem_w, rem_h - 10.0);
-                                        }
-                                    }
+                                    *rpos = (entry_x_ratio * rem_w, entry_y_ratio * rem_h);
                                 }
 
                                 set_current_active_screen(ActiveScreen::Client);
@@ -241,7 +252,9 @@ impl MouseEdgeMonitor {
                                     if let Some(tx) = &*tx_guard {
                                         let _ = tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
                                             active_device: "client".to_string(),
-                                            entry_y_ratio: y_ratio,
+                                            entry_x_ratio,
+                                            entry_y_ratio,
+                                            edge: entry_edge.to_string(),
                                         }));
                                     }
                                 }
@@ -255,7 +268,7 @@ impl MouseEdgeMonitor {
                                 return 1; // Suppress event on host
                             }
                         } else {
-                            // Client is active: stream mouse moves to Mac and detect when user returns to Windows!
+                            // Client is active: stream mouse moves to remote client and detect return seamlessly
                             let center_x = screen_w / 2;
                             let center_y = screen_h / 2;
 
@@ -270,47 +283,54 @@ impl MouseEdgeMonitor {
 
                                             if dx != 0 || dy != 0 {
                                                 let mut should_switch_back = false;
-                                                let mut return_y_ratio = 0.5f32;
                                                 let mut return_x_ratio = 0.5f32;
+                                                let mut return_y_ratio = 0.5f32;
+                                                let mut return_edge = "right";
 
                                                 if !in_cooldown {
-                                                    // Update virtual cursor position on remote screen with proper clamping!
                                                     if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
                                                         let next_x = rpos.0 + dx as f32;
                                                         let next_y = rpos.1 + dy as f32;
 
                                                         match arrangement {
                                                             ScreenArrangement::HostLeftClientRight => {
-                                                                // Crossing back from Mac left edge into Windows right edge
-                                                                if next_x <= 8.0 && dx < 0 {
+                                                                // Returning from Client's left edge into Host's right edge
+                                                                if next_x <= 15.0 && dx < 0 {
                                                                     should_switch_back = true;
+                                                                    return_edge = "right";
                                                                 }
                                                             }
                                                             ScreenArrangement::HostRightClientLeft => {
-                                                                // Crossing back from Mac right edge into Windows left edge
-                                                                if next_x >= rem_w - 8.0 && dx > 0 {
+                                                                // Returning from Client's right edge into Host's left edge
+                                                                if next_x >= rem_w - 15.0 && dx > 0 {
                                                                     should_switch_back = true;
+                                                                    return_edge = "left";
                                                                 }
                                                             }
                                                             ScreenArrangement::HostTopClientBottom => {
-                                                                // Crossing back from Mac top edge into Windows bottom edge
-                                                                if next_y <= 8.0 && dy < 0 {
+                                                                // Returning from Client's top edge into Host's bottom edge
+                                                                if next_y <= 15.0 && dy < 0 {
                                                                     should_switch_back = true;
+                                                                    return_edge = "bottom";
                                                                 }
                                                             }
                                                             ScreenArrangement::HostBottomClientTop => {
-                                                                // Crossing back from Mac bottom edge into Windows top edge
-                                                                if next_y >= rem_h - 8.0 && dy > 0 {
+                                                                // Returning from Client's bottom edge into Host's top edge
+                                                                if next_y >= rem_h - 15.0 && dy > 0 {
                                                                     should_switch_back = true;
+                                                                    return_edge = "top";
                                                                 }
                                                             }
                                                         }
 
-                                                        // Clamp virtual remote pos so it never balloons off-screen
                                                         rpos.0 = next_x.clamp(0.0, rem_w);
                                                         rpos.1 = next_y.clamp(0.0, rem_h);
-                                                        return_y_ratio = (rpos.1 / rem_h).clamp(0.0, 1.0);
-                                                        return_x_ratio = (rpos.0 / rem_w).clamp(0.0, 1.0);
+
+                                                        // Map return position back to Host coordinates including offsets!
+                                                        let host_y = (rpos.1 + (v_off * screen_h as f32)).clamp(10.0, (screen_h - 10) as f32);
+                                                        let host_x = (rpos.0 + (h_off * screen_w as f32)).clamp(10.0, (screen_w - 10) as f32);
+                                                        return_y_ratio = host_y / (screen_h as f32);
+                                                        return_x_ratio = host_x / (screen_w as f32);
                                                     }
                                                 }
 
@@ -323,24 +343,24 @@ impl MouseEdgeMonitor {
 
                                                     match arrangement {
                                                         ScreenArrangement::HostLeftClientRight => {
-                                                            // Place comfortably inside Windows screen (60px from right edge)
-                                                            SetCursorPos(screen_w - 60, return_y);
+                                                            SetCursorPos(screen_w - 35, return_y);
                                                         }
                                                         ScreenArrangement::HostRightClientLeft => {
-                                                            // Place comfortably inside Windows screen (60px from left edge)
-                                                            SetCursorPos(60, return_y);
+                                                            SetCursorPos(35, return_y);
                                                         }
                                                         ScreenArrangement::HostTopClientBottom => {
-                                                            SetCursorPos(return_x, screen_h - 60);
+                                                            SetCursorPos(return_x, screen_h - 35);
                                                         }
                                                         ScreenArrangement::HostBottomClientTop => {
-                                                            SetCursorPos(return_x, 60);
+                                                            SetCursorPos(return_x, 35);
                                                         }
                                                     }
 
                                                     let _ = tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
                                                         active_device: "host".to_string(),
+                                                        entry_x_ratio: return_x_ratio,
                                                         entry_y_ratio: return_y_ratio,
+                                                        edge: return_edge.to_string(),
                                                     }));
 
                                                     if let Ok(ui_guard) = UI_EVENT_TX.lock() {
@@ -448,7 +468,7 @@ mod macos_mouse {
         set_current_active_screen, ActiveScreen, ScreenArrangement,
         CURRENT_ACTIVE_SCREEN, CURRENT_ARRANGEMENT, LAST_SWITCH_TIME, MOUSE_HOOK_TX,
         REMOTE_SCREEN_SIZE, SCREEN_DIMENSIONS, UI_EVENT_TX, VERTICAL_OFFSET_RATIO,
-        VIRTUAL_REMOTE_POS,
+        HORIZONTAL_OFFSET_RATIO, VIRTUAL_REMOTE_POS,
     };
 
     #[repr(C)]
@@ -511,13 +531,15 @@ mod macos_mouse {
         let arrangement = CURRENT_ARRANGEMENT.read().map(|a| *a).unwrap_or(ScreenArrangement::HostLeftClientRight);
         let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1920, 1080));
         let (rem_w, rem_h) = REMOTE_SCREEN_SIZE.read().map(|d| *d).unwrap_or((1920.0, 1080.0));
+        let v_off = VERTICAL_OFFSET_RATIO.read().map(|o| *o).unwrap_or(0.0);
+        let h_off = HORIZONTAL_OFFSET_RATIO.read().map(|o| *o).unwrap_or(0.0);
 
         let loc = unsafe { CGEventGetLocation(event) };
         let x = loc.x as i32;
         let y = loc.y as i32;
 
         let in_cooldown = if let Ok(t_guard) = LAST_SWITCH_TIME.read() {
-            t_guard.map(|t| t.elapsed().as_millis() < 400).unwrap_or(false)
+            t_guard.map(|t| t.elapsed().as_millis() < 300).unwrap_or(false)
         } else {
             false
         };
@@ -527,33 +549,36 @@ mod macos_mouse {
                 return event;
             }
 
-            let crossed = match arrangement {
-                ScreenArrangement::HostLeftClientRight => x >= screen_w - 2,
-                ScreenArrangement::HostRightClientLeft => x <= 1,
-                ScreenArrangement::HostTopClientBottom => y >= screen_h - 2,
-                ScreenArrangement::HostBottomClientTop => y <= 1,
+            let (crossed, entry_edge, entry_x_ratio, entry_y_ratio) = match arrangement {
+                ScreenArrangement::HostLeftClientRight => {
+                    let at_edge = x >= screen_w - 2;
+                    let rel_y = (y as f32) - (v_off * screen_h as f32);
+                    let y_ratio = (rel_y / rem_h).clamp(0.0, 1.0);
+                    (at_edge, "left", 0.01f32, y_ratio)
+                }
+                ScreenArrangement::HostRightClientLeft => {
+                    let at_edge = x <= 1;
+                    let rel_y = (y as f32) - (v_off * screen_h as f32);
+                    let y_ratio = (rel_y / rem_h).clamp(0.0, 1.0);
+                    (at_edge, "right", 0.99f32, y_ratio)
+                }
+                ScreenArrangement::HostTopClientBottom => {
+                    let at_edge = y >= screen_h - 2;
+                    let rel_x = (x as f32) - (h_off * screen_w as f32);
+                    let x_ratio = (rel_x / rem_w).clamp(0.0, 1.0);
+                    (at_edge, "top", x_ratio, 0.01f32)
+                }
+                ScreenArrangement::HostBottomClientTop => {
+                    let at_edge = y <= 1;
+                    let rel_x = (x as f32) - (h_off * screen_w as f32);
+                    let x_ratio = (rel_x / rem_w).clamp(0.0, 1.0);
+                    (at_edge, "bottom", x_ratio, 0.99f32)
+                }
             };
 
             if crossed {
-                let offset = VERTICAL_OFFSET_RATIO.read().map(|o| *o).unwrap_or(0.0);
-                let y_ratio = ((y as f32 / screen_h as f32) - offset).clamp(0.0, 1.0);
-                let x_ratio = (x as f32 / screen_w as f32).clamp(0.0, 1.0);
-
                 if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
-                    match arrangement {
-                        ScreenArrangement::HostLeftClientRight => {
-                            *rpos = (10.0, y_ratio * rem_h);
-                        }
-                        ScreenArrangement::HostRightClientLeft => {
-                            *rpos = (rem_w - 10.0, y_ratio * rem_h);
-                        }
-                        ScreenArrangement::HostTopClientBottom => {
-                            *rpos = (x_ratio * rem_w, 10.0);
-                        }
-                        ScreenArrangement::HostBottomClientTop => {
-                            *rpos = (x_ratio * rem_w, rem_h - 10.0);
-                        }
-                    }
+                    *rpos = (entry_x_ratio * rem_w, entry_y_ratio * rem_h);
                 }
 
                 set_current_active_screen(ActiveScreen::Client);
@@ -568,7 +593,9 @@ mod macos_mouse {
                     if let Some(tx) = &*tx_guard {
                         let _ = tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
                             active_device: "client".to_string(),
-                            entry_y_ratio: y_ratio,
+                            entry_x_ratio,
+                            entry_y_ratio,
+                            edge: entry_edge.to_string(),
                         }));
                     }
                 }
@@ -600,8 +627,9 @@ mod macos_mouse {
 
                         if dx != 0 || dy != 0 {
                             let mut should_switch_back = false;
-                            let mut return_y_ratio = 0.5f32;
                             let mut return_x_ratio = 0.5f32;
+                            let mut return_y_ratio = 0.5f32;
+                            let mut return_edge = "right";
 
                             if !in_cooldown {
                                 if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
@@ -610,31 +638,38 @@ mod macos_mouse {
 
                                     match arrangement {
                                         ScreenArrangement::HostLeftClientRight => {
-                                            if next_x <= 8.0 && dx < 0 {
+                                            if next_x <= 15.0 && dx < 0 {
                                                 should_switch_back = true;
+                                                return_edge = "right";
                                             }
                                         }
                                         ScreenArrangement::HostRightClientLeft => {
-                                            if next_x >= rem_w - 8.0 && dx > 0 {
+                                            if next_x >= rem_w - 15.0 && dx > 0 {
                                                 should_switch_back = true;
+                                                return_edge = "left";
                                             }
                                         }
                                         ScreenArrangement::HostTopClientBottom => {
-                                            if next_y <= 8.0 && dy < 0 {
+                                            if next_y <= 15.0 && dy < 0 {
                                                 should_switch_back = true;
+                                                return_edge = "bottom";
                                             }
                                         }
                                         ScreenArrangement::HostBottomClientTop => {
-                                            if next_y >= rem_h - 8.0 && dy > 0 {
+                                            if next_y >= rem_h - 15.0 && dy > 0 {
                                                 should_switch_back = true;
+                                                return_edge = "top";
                                             }
                                         }
                                     }
 
                                     rpos.0 = next_x.clamp(0.0, rem_w);
                                     rpos.1 = next_y.clamp(0.0, rem_h);
-                                    return_y_ratio = (rpos.1 / rem_h).clamp(0.0, 1.0);
-                                    return_x_ratio = (rpos.0 / rem_w).clamp(0.0, 1.0);
+
+                                    let host_y = (rpos.1 + (v_off * screen_h as f32)).clamp(10.0, (screen_h - 10) as f32);
+                                    let host_x = (rpos.0 + (h_off * screen_w as f32)).clamp(10.0, (screen_w - 10) as f32);
+                                    return_y_ratio = host_y / (screen_h as f32);
+                                    return_x_ratio = host_x / (screen_w as f32);
                                 }
                             }
 
@@ -647,23 +682,25 @@ mod macos_mouse {
                                 unsafe {
                                     match arrangement {
                                         ScreenArrangement::HostLeftClientRight => {
-                                            CGWarpMouseCursorPosition(CGPoint { x: (screen_w - 60) as f64, y: return_y as f64 });
+                                            CGWarpMouseCursorPosition(CGPoint { x: (screen_w - 35) as f64, y: return_y as f64 });
                                         }
                                         ScreenArrangement::HostRightClientLeft => {
-                                            CGWarpMouseCursorPosition(CGPoint { x: 60.0, y: return_y as f64 });
+                                            CGWarpMouseCursorPosition(CGPoint { x: 35.0, y: return_y as f64 });
                                         }
                                         ScreenArrangement::HostTopClientBottom => {
-                                            CGWarpMouseCursorPosition(CGPoint { x: return_x as f64, y: (screen_h - 60) as f64 });
+                                            CGWarpMouseCursorPosition(CGPoint { x: return_x as f64, y: (screen_h - 35) as f64 });
                                         }
                                         ScreenArrangement::HostBottomClientTop => {
-                                            CGWarpMouseCursorPosition(CGPoint { x: return_x as f64, y: 60.0 });
+                                            CGWarpMouseCursorPosition(CGPoint { x: return_x as f64, y: 35.0 });
                                         }
                                     }
                                 }
 
                                 let _ = tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
                                     active_device: "host".to_string(),
+                                    entry_x_ratio: return_x_ratio,
                                     entry_y_ratio: return_y_ratio,
+                                    edge: return_edge.to_string(),
                                 }));
 
                                 if let Ok(ui_guard) = UI_EVENT_TX.lock() {
@@ -769,7 +806,6 @@ mod macos_mouse {
 
             while is_running.load(Ordering::SeqCst) {
                 CFRunLoopRun();
-                break;
             }
 
             CFRelease(source);

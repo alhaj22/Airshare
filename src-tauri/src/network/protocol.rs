@@ -114,7 +114,15 @@ pub struct KeyEventPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SwitchScreenPayload {
     pub active_device: String, // "host" or "client"
+    #[serde(default)]
+    pub entry_x_ratio: f32,    // 0.0 to 1.0 relative cursor X
     pub entry_y_ratio: f32,    // 0.0 to 1.0 relative cursor Y
+    #[serde(default = "default_edge")]
+    pub edge: String,          // "left", "right", "top", "bottom"
+}
+
+fn default_edge() -> String {
+    "left".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

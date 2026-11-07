@@ -214,7 +214,9 @@ async fn create_connection_pin(
 
             let msg = NetworkMessage::SwitchScreen(SwitchScreenPayload {
                 active_device: "host".to_string(),
+                entry_x_ratio: 0.5,
                 entry_y_ratio: 0.5,
+                edge: "center".to_string(),
             });
             if let Some(srv) = server_ref.read().await.as_ref() {
                 let _ = srv.send_message(msg);
@@ -250,8 +252,19 @@ async fn create_connection_pin(
                     kb_hook.update_active_screen(target);
 
                     if p.active_device == "host" {
-                        let target_y = (p.entry_y_ratio * screen_h as f32) as i32;
-                        m_sim.move_absolute((screen_w as i32) - 30, target_y);
+                        let entry_x = match p.edge.as_str() {
+                            "left" => 30,
+                            "right" => (screen_w as i32) - 30,
+                            _ => (p.entry_x_ratio * screen_w as f32) as i32,
+                        }.clamp(10, (screen_w as i32) - 10);
+
+                        let entry_y = match p.edge.as_str() {
+                            "top" => 30,
+                            "bottom" => (screen_h as i32) - 30,
+                            _ => (p.entry_y_ratio * screen_h as f32) as i32,
+                        }.clamp(10, (screen_h as i32) - 10);
+
+                        m_sim.move_absolute(entry_x, entry_y);
                     }
                 }
                 NetworkMessage::MouseMove(p) => {
@@ -334,6 +347,7 @@ async fn join_connection(
 
     *state.client.write().await = Some(client);
     *state.current_session.write().await = Some(session.clone());
+    crate::mouse::set_remote_screen_size(session.peer_screen_width, session.peer_screen_height);
     let _ = app_handle.emit("session_started", &session);
 
     // Start Low-Level Mouse & Keyboard Hooks with client's outbound channel
@@ -379,7 +393,9 @@ async fn join_connection(
 
             let msg = NetworkMessage::SwitchScreen(SwitchScreenPayload {
                 active_device: "client".to_string(),
+                entry_x_ratio: 0.5,
                 entry_y_ratio: 0.5,
+                edge: "center".to_string(),
             });
             if let Some(cl) = client_ref.read().await.as_ref() {
                 let _ = cl.send_message(msg);
@@ -426,8 +442,19 @@ async fn join_connection(
                     kb_hook.update_active_screen(target);
 
                     if p.active_device == "client" {
-                        let target_y = (p.entry_y_ratio * screen_h as f32) as i32;
-                        m_sim.move_absolute(2, target_y);
+                        let entry_x = match p.edge.as_str() {
+                            "left" => 30,
+                            "right" => (screen_w as i32) - 30,
+                            _ => (p.entry_x_ratio * screen_w as f32) as i32,
+                        }.clamp(10, (screen_w as i32) - 10);
+
+                        let entry_y = match p.edge.as_str() {
+                            "top" => 30,
+                            "bottom" => (screen_h as i32) - 30,
+                            _ => (p.entry_y_ratio * screen_h as f32) as i32,
+                        }.clamp(10, (screen_h as i32) - 10);
+
+                        m_sim.move_absolute(entry_x, entry_y);
                     }
                 }
                 NetworkMessage::Disconnect { reason } => {
@@ -480,7 +507,9 @@ async fn toggle_active_screen(state: tauri::State<'_, AppState>) -> Result<Strin
             ActiveScreen::Host => "host".to_string(),
             ActiveScreen::Client => "client".to_string(),
         },
+        entry_x_ratio: 0.5,
         entry_y_ratio: 0.5,
+        edge: "center".to_string(),
     });
 
     if let Some(srv) = state.server.read().await.as_ref() {
@@ -545,6 +574,7 @@ async fn disconnect_all(
 async fn set_screen_arrangement(
     arrangement: String,
     vertical_offset: Option<f32>,
+    horizontal_offset: Option<f32>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let arr = match arrangement.as_str() {
@@ -557,6 +587,9 @@ async fn set_screen_arrangement(
     state.edge_monitor.set_arrangement(arr).await;
     if let Some(off) = vertical_offset {
         state.edge_monitor.set_vertical_offset(off).await;
+    }
+    if let Some(off) = horizontal_offset {
+        state.edge_monitor.set_horizontal_offset(off).await;
     }
     Ok(())
 }

@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 #[cfg(windows)]
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
@@ -43,6 +45,8 @@ mod macos {
 pub struct MouseSimulator {
     _screen_width: u32,
     _screen_height: u32,
+    is_left_down: AtomicBool,
+    is_right_down: AtomicBool,
 }
 
 impl MouseSimulator {
@@ -50,6 +54,8 @@ impl MouseSimulator {
         Self {
             _screen_width: screen_width,
             _screen_height: screen_height,
+            is_left_down: AtomicBool::new(false),
+            is_right_down: AtomicBool::new(false),
         }
     }
 
@@ -84,13 +90,22 @@ impl MouseSimulator {
                     y: loc.y + dy as f64,
                 };
                 CGWarpMouseCursorPosition(new_pos);
+                let mouse_type = if self.is_left_down.load(Ordering::SeqCst) {
+                    6 // kCGEventLeftMouseDragged
+                } else if self.is_right_down.load(Ordering::SeqCst) {
+                    7 // kCGEventRightMouseDragged
+                } else {
+                    5 // kCGEventMouseMoved
+                };
+                let mouse_btn = if self.is_right_down.load(Ordering::SeqCst) { 1 } else { 0 };
                 let move_evt = CGEventCreateMouseEvent(
                     std::ptr::null_mut(),
-                    5, // kCGEventMouseMoved
+                    mouse_type,
                     new_pos,
-                    0, // kCGMouseButtonLeft
+                    mouse_btn,
                 );
                 if !move_evt.is_null() {
+                    CGEventPost(1 /* kCGSessionEventTap */, move_evt);
                     CGEventPost(0 /* kCGHIDEventTap */, move_evt);
                     CFRelease(move_evt);
                 }
@@ -132,15 +147,30 @@ impl MouseSimulator {
                 y: y as f64,
             };
             CGWarpMouseCursorPosition(pos);
-            let move_evt = CGEventCreateMouseEvent(std::ptr::null_mut(), 5, pos, 0);
+            let mouse_type = if self.is_left_down.load(Ordering::SeqCst) {
+                6 // kCGEventLeftMouseDragged
+            } else if self.is_right_down.load(Ordering::SeqCst) {
+                7 // kCGEventRightMouseDragged
+            } else {
+                5 // kCGEventMouseMoved
+            };
+            let mouse_btn = if self.is_right_down.load(Ordering::SeqCst) { 1 } else { 0 };
+            let move_evt = CGEventCreateMouseEvent(std::ptr::null_mut(), mouse_type, pos, mouse_btn);
             if !move_evt.is_null() {
-                CGEventPost(0, move_evt);
+                CGEventPost(1 /* kCGSessionEventTap */, move_evt);
+                CGEventPost(0 /* kCGHIDEventTap */, move_evt);
                 CFRelease(move_evt);
             }
         }
     }
 
     pub fn button_event(&self, button: u8, is_down: bool) {
+        if button == 0 {
+            self.is_left_down.store(is_down, Ordering::SeqCst);
+        } else if button == 1 {
+            self.is_right_down.store(is_down, Ordering::SeqCst);
+        }
+
         #[cfg(windows)]
         unsafe {
             let flags = match (button, is_down) {
@@ -193,43 +223,66 @@ impl MouseSimulator {
 
             let evt = CGEventCreateMouseEvent(std::ptr::null_mut(), mouse_type, loc, mouse_btn);
             if !evt.is_null() {
-                CGEventPost(0, evt);
+                CGEventPost(1 /* kCGSessionEventTap */, evt);
+                CGEventPost(0 /* kCGHIDEventTap */, evt);
                 CFRelease(evt);
             }
         }
     }
 
-    pub fn scroll(&self, _delta_x: i32, delta_y: i32) {
+    pub fn scroll(&self, delta_x: i32, delta_y: i32) {
         #[cfg(windows)]
         unsafe {
-            let mut input = INPUT {
-                r#type: INPUT_MOUSE,
-                Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
-                    mi: MOUSEINPUT {
-                        dx: 0,
-                        dy: 0,
-                        mouseData: (delta_y * 120) as u32,
-                        dwFlags: MOUSEEVENTF_WHEEL,
-                        time: 0,
-                        dwExtraInfo: 0,
+            if delta_y != 0 {
+                let mut input = INPUT {
+                    r#type: INPUT_MOUSE,
+                    Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
+                        mi: MOUSEINPUT {
+                            dx: 0,
+                            dy: 0,
+                            mouseData: (delta_y * 120) as u32,
+                            dwFlags: MOUSEEVENTF_WHEEL,
+                            time: 0,
+                            dwExtraInfo: 0,
+                        },
                     },
-                },
-            };
-            SendInput(1, &mut input, std::mem::size_of::<INPUT>() as i32);
+                };
+                SendInput(1, &mut input, std::mem::size_of::<INPUT>() as i32);
+            }
+
+            if delta_x != 0 {
+                let mut input = INPUT {
+                    r#type: INPUT_MOUSE,
+                    Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
+                        mi: MOUSEINPUT {
+                            dx: 0,
+                            dy: 0,
+                            mouseData: (delta_x * 120) as u32,
+                            dwFlags: 0x01000, // MOUSEEVENTF_HWHEEL
+                            time: 0,
+                            dwExtraInfo: 0,
+                        },
+                    },
+                };
+                SendInput(1, &mut input, std::mem::size_of::<INPUT>() as i32);
+            }
         }
 
         #[cfg(target_os = "macos")]
         unsafe {
             use macos::*;
-            let evt = CGEventCreateScrollWheelEvent(
-                std::ptr::null_mut(),
-                0, // kCGScrollEventUnitPixel
-                1,
-                delta_y * 10,
-            );
-            if !evt.is_null() {
-                CGEventPost(0, evt);
-                CFRelease(evt);
+            if delta_y != 0 {
+                let evt = CGEventCreateScrollWheelEvent(
+                    std::ptr::null_mut(),
+                    0, // kCGScrollEventUnitPixel
+                    1,
+                    delta_y * 10,
+                );
+                if !evt.is_null() {
+                    CGEventPost(1 /* kCGSessionEventTap */, evt);
+                    CGEventPost(0 /* kCGHIDEventTap */, evt);
+                    CFRelease(evt);
+                }
             }
         }
     }

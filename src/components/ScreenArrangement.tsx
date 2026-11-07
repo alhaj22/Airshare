@@ -1,21 +1,36 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { ConnectionStatus, DiscoveredDevice, ScreenArrangementType, SystemInfo } from '../types';
-import { Monitor, ArrowLeftRight, ArrowUpDown, MousePointer2, Move, ChevronRight, Info } from 'lucide-react';
+import {
+  Monitor,
+  MousePointer2,
+  Move,
+  ChevronRight,
+  Info,
+  Check,
+  Eye,
+  AlignVerticalJustifyStart,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignHorizontalJustifyStart,
+  AlignHorizontalJustifyCenter,
+  AlignHorizontalJustifyEnd,
+} from 'lucide-react';
 
 interface ScreenArrangementProps {
   status: ConnectionStatus;
   systemInfo: SystemInfo | null;
   arrangement: ScreenArrangementType;
-  onArrangementChange: (arr: ScreenArrangementType, offsetRatio?: number) => void;
+  onArrangementChange: (arr: ScreenArrangementType, vOffsetRatio?: number, hOffsetRatio?: number) => void;
   onSimulateEdgeCross: () => void;
   onDeviceDrop?: (device: DiscoveredDevice) => void;
 }
 
-function getOsIcon(os: string) {
+function getOsIcon(os?: string) {
   const o = (os || '').toLowerCase();
   if (o.includes('mac')) return '🍎';
   if (o.includes('win')) return '🪟';
-  return '🐧';
+  if (o.includes('linux')) return '🐧';
+  return '💻';
 }
 
 export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
@@ -28,67 +43,204 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
   const isConnected = status.mode === 'connected';
   const isClientActive = status.active_screen === 'client';
 
-  const [offsetPx, setOffsetPx] = useState(0);
+  // Read saved offsets from localStorage if available
+  const initialOffsets = (() => {
+    try {
+      const saved = localStorage.getItem('airdesk_arrangement');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          v: typeof parsed?.vOffset === 'number' ? parsed.vOffset * 100 : 0,
+          h: typeof parsed?.hOffset === 'number' ? parsed.hOffset * 100 : 0,
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return { v: 0, h: 0 };
+  })();
+
+  const [vOffsetPx, setVOffsetPx] = useState(initialOffsets.v);
+  const [hOffsetPx, setHOffsetPx] = useState(initialOffsets.h);
   const [isDragging, setIsDragging] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [showIdentify, setShowIdentify] = useState(false);
+  const [snapGuide, setSnapGuide] = useState<'top' | 'center' | 'bottom' | 'left' | 'right' | null>(null);
+
   const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const dragStartOffset = useRef(0);
+  const dragStartOffset = useRef<{ v: number; h: number }>({ v: 0, h: 0 });
   const currentArrangementRef = useRef<ScreenArrangementType>(arrangement);
   currentArrangementRef.current = arrangement;
 
-  const hostName = systemInfo?.device_name || 'This Computer';
+  const hostName = systemInfo?.device_name || 'DESKTOP-H6EVCSJ';
   const hostOs = systemInfo?.os || 'Windows';
   const hostW = systemInfo?.screen_width || 1920;
   const hostH = systemInfo?.screen_height || 1080;
 
-  const clientName = status.peer_device || (isConnected ? 'Remote Computer' : 'Remote Display');
-  const clientOs = status.peer_os || 'windows';
-  const clientW = status.peer_screen_width || 1920;
-  const clientH = status.peer_screen_height || 1080;
+  const clientName = status.peer_device || (isConnected ? "Alhaj's MacBook Air" : 'Remote Display');
+  const clientOs = status.peer_os || 'macos';
+  const clientW = status.peer_screen_width || 1440;
+  const clientH = status.peer_screen_height || 900;
 
-  const isHorizontal = arrangement === 'host_left_client_right' || arrangement === 'host_right_client_left';
-  const isHostLeft = arrangement === 'host_left_client_right';
-  const isHostTop = arrangement === 'host_top_client_bottom';
+  // Proportional sizing matching Windows Display Settings
+  const hostAspect = hostW / hostH;
+  const clientAspect = clientW / clientH;
 
+  const SCREEN_A_W = 180;
+  const SCREEN_A_H = Math.round(SCREEN_A_W / hostAspect); // e.g. 101px for 16:9
+
+  const SCREEN_B_W = Math.round(180 * (clientW / hostW));
+  const SCREEN_B_H = Math.round(SCREEN_B_W / clientAspect);
+
+  const CANVAS_W = 540;
+  const CANVAS_H = 260;
+
+  // Reference center for Monitor A
+  const hostCenterPos = {
+    x: Math.round((CANVAS_W - SCREEN_A_W) / 2),
+    y: Math.round((CANVAS_H - SCREEN_A_H) / 2),
+  };
+
+  const isHorizontal =
+    arrangement === 'host_left_client_right' || arrangement === 'host_right_client_left';
+
+  // Compute positions of Monitor A and Monitor B
+  let hostPos = { ...hostCenterPos };
+  let clientPos = { x: 0, y: 0 };
+
+  switch (arrangement) {
+    case 'host_left_client_right':
+      clientPos = {
+        x: hostPos.x + SCREEN_A_W,
+        y: hostPos.y + vOffsetPx,
+      };
+      break;
+    case 'host_right_client_left':
+      clientPos = {
+        x: hostPos.x - SCREEN_B_W,
+        y: hostPos.y + vOffsetPx,
+      };
+      break;
+    case 'host_top_client_bottom':
+      clientPos = {
+        x: hostPos.x + hOffsetPx,
+        y: hostPos.y + SCREEN_A_H,
+      };
+      break;
+    case 'host_bottom_client_top':
+      clientPos = {
+        x: hostPos.x + hOffsetPx,
+        y: hostPos.y - SCREEN_B_H,
+      };
+      break;
+  }
+
+  // Handle Drag Start
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!isConnected) return;
     e.preventDefault();
     setIsDragging(true);
     dragStartPos.current = { x: e.clientX, y: e.clientY };
-    dragStartOffset.current = offsetPx;
+    dragStartOffset.current = { v: vOffsetPx, h: hOffsetPx };
   };
 
+  // Handle 2D Dragging with automatic quadrant detection & magnetic snapping
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
       if (!isDragging) return;
+
       const deltaX = e.clientX - dragStartPos.current.x;
       const deltaY = e.clientY - dragStartPos.current.y;
 
       let nextArr = currentArrangementRef.current;
-      let nextOff = dragStartOffset.current;
+      let nextV = dragStartOffset.current.v;
+      let nextH = dragStartOffset.current.h;
+      let guide: 'top' | 'center' | 'bottom' | 'left' | 'right' | null = null;
 
-      // Switch direction quadrant
-      if (Math.abs(deltaX) > 100 && Math.abs(deltaX) > Math.abs(deltaY)) {
-        if (deltaX > 0 && nextArr === 'host_right_client_left') nextArr = 'host_left_client_right';
-        else if (deltaX < 0 && nextArr === 'host_left_client_right') nextArr = 'host_right_client_left';
-      } else if (Math.abs(deltaY) > 80 && Math.abs(deltaY) > Math.abs(deltaX)) {
-        if (deltaY > 0 && nextArr === 'host_bottom_client_top') nextArr = 'host_top_client_bottom';
-        else if (deltaY < 0 && nextArr === 'host_top_client_bottom') nextArr = 'host_bottom_client_top';
+      // 2D Direction Switching based on movement threshold
+      if (Math.abs(deltaX) > 70 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+        if (deltaX > 0) nextArr = 'host_left_client_right';
+        else nextArr = 'host_right_client_left';
+      } else if (Math.abs(deltaY) > 70 && Math.abs(deltaY) > Math.abs(deltaX) * 1.2) {
+        if (deltaY > 0) nextArr = 'host_top_client_bottom';
+        else nextArr = 'host_bottom_client_top';
       }
 
-      // Fine alignment offset
       if (nextArr === 'host_left_client_right' || nextArr === 'host_right_client_left') {
-        nextOff = Math.max(-60, Math.min(60, dragStartOffset.current + deltaY));
+        let rawV = dragStartOffset.current.v + deltaY;
+        const maxOffset = SCREEN_A_H - 20;
+        const minOffset = -(SCREEN_B_H - 20);
+
+        rawV = Math.max(minOffset, Math.min(maxOffset, rawV));
+
+        // Magnetic snap points
+        // 1. Top align (y = 0)
+        if (Math.abs(rawV) < 8) {
+          rawV = 0;
+          guide = 'top';
+        }
+        // 2. Center align
+        const centerOffset = Math.round((SCREEN_A_H - SCREEN_B_H) / 2);
+        if (Math.abs(rawV - centerOffset) < 8) {
+          rawV = centerOffset;
+          guide = 'center';
+        }
+        // 3. Bottom align
+        const bottomOffset = SCREEN_A_H - SCREEN_B_H;
+        if (Math.abs(rawV - bottomOffset) < 8) {
+          rawV = bottomOffset;
+          guide = 'bottom';
+        }
+
+        nextV = rawV;
+        setVOffsetPx(nextV);
+        setSnapGuide(guide);
+
+        const vRatio = nextV / SCREEN_A_H;
+        onArrangementChange(nextArr, vRatio, 0);
       } else {
-        nextOff = Math.max(-60, Math.min(60, dragStartOffset.current + deltaX));
+        let rawH = dragStartOffset.current.h + deltaX;
+        const maxOffset = SCREEN_A_W - 20;
+        const minOffset = -(SCREEN_B_W - 20);
+
+        rawH = Math.max(minOffset, Math.min(maxOffset, rawH));
+
+        // Magnetic snap points for horizontal
+        if (Math.abs(rawH) < 8) {
+          rawH = 0;
+          guide = 'left';
+        }
+        const centerHOffset = Math.round((SCREEN_A_W - SCREEN_B_W) / 2);
+        if (Math.abs(rawH - centerHOffset) < 8) {
+          rawH = centerHOffset;
+          guide = 'center';
+        }
+        const rightOffset = SCREEN_A_W - SCREEN_B_W;
+        if (Math.abs(rawH - rightOffset) < 8) {
+          rawH = rightOffset;
+          guide = 'right';
+        }
+
+        nextH = rawH;
+        setHOffsetPx(nextH);
+        setSnapGuide(guide);
+
+        const hRatio = nextH / SCREEN_A_W;
+        onArrangementChange(nextArr, 0, hRatio);
       }
 
-      setOffsetPx(nextOff);
-      onArrangementChange(nextArr, nextOff / 120);
+      currentArrangementRef.current = nextArr;
     },
-    [isDragging, onArrangementChange]
+    [isDragging, SCREEN_A_H, SCREEN_B_H, SCREEN_A_W, SCREEN_B_W, onArrangementChange]
   );
 
-  const handleMouseUp = useCallback(() => setIsDragging(false), []);
+  const handleMouseUp = useCallback(() => {
+    if (isDragging) {
+      setIsDragging(false);
+      setSnapGuide(null);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2500);
+    }
+  }, [isDragging]);
 
   useEffect(() => {
     if (isDragging) {
@@ -101,290 +253,473 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
-  // Arrangement quick buttons
-  const arrangements: { key: ScreenArrangementType; icon: React.ReactNode; label: string }[] = [
-    { key: 'host_left_client_right', icon: <ArrowLeftRight className="h-3.5 w-3.5" />, label: '← →' },
-    { key: 'host_right_client_left', icon: <ArrowLeftRight className="h-3.5 w-3.5 rotate-180" />, label: '→ ←' },
-    { key: 'host_top_client_bottom', icon: <ArrowUpDown className="h-3.5 w-3.5" />, label: '↑ ↓' },
-    { key: 'host_bottom_client_top', icon: <ArrowUpDown className="h-3.5 w-3.5 rotate-180" />, label: '↓ ↑' },
-  ];
+  // Flash Identify Badges
+  const triggerIdentify = () => {
+    setShowIdentify(true);
+    setTimeout(() => setShowIdentify(false), 3000);
+  };
 
-  // Canvas layout: 2 screens side by side or stacked
-  const CANVAS_W = 480;
-  const CANVAS_H = 200;
-  const SCREEN_W = 160;
-  const SCREEN_H = 100;
-  const GAP = 20;
-
-  // Calculate positions on canvas
-  let hostPos = { x: 0, y: 0 };
-  let clientPos = { x: 0, y: 0 };
-
-  if (isHorizontal) {
-    const totalW = SCREEN_W * 2 + GAP;
-    const startX = (CANVAS_W - totalW) / 2;
-    const centerY = (CANVAS_H - SCREEN_H) / 2;
-    if (isHostLeft) {
-      hostPos = { x: startX, y: centerY };
-      clientPos = { x: startX + SCREEN_W + GAP, y: centerY + offsetPx * 0.4 };
+  // Quick alignment setters
+  const applyAlignment = (type: 'top' | 'center' | 'bottom' | 'left' | 'right') => {
+    if (isHorizontal) {
+      let v = 0;
+      if (type === 'top') v = 0;
+      else if (type === 'center') v = Math.round((SCREEN_A_H - SCREEN_B_H) / 2);
+      else if (type === 'bottom') v = SCREEN_A_H - SCREEN_B_H;
+      setVOffsetPx(v);
+      onArrangementChange(arrangement, v / SCREEN_A_H, 0);
     } else {
-      clientPos = { x: startX, y: centerY + offsetPx * 0.4 };
-      hostPos = { x: startX + SCREEN_W + GAP, y: centerY };
+      let h = 0;
+      if (type === 'left') h = 0;
+      else if (type === 'center') h = Math.round((SCREEN_A_W - SCREEN_B_W) / 2);
+      else if (type === 'right') h = SCREEN_A_W - SCREEN_B_W;
+      setHOffsetPx(h);
+      onArrangementChange(arrangement, 0, h / SCREEN_A_W);
     }
-  } else {
-    const totalH = SCREEN_H * 2 + GAP;
-    const startY = (CANVAS_H - totalH) / 2;
-    const centerX = (CANVAS_W - SCREEN_W) / 2;
-    if (isHostTop) {
-      hostPos = { x: centerX, y: startY };
-      clientPos = { x: centerX + offsetPx * 0.4, y: startY + SCREEN_H + GAP };
-    } else {
-      clientPos = { x: centerX, y: startY };
-      hostPos = { x: centerX + offsetPx * 0.4, y: startY + SCREEN_H + GAP };
-    }
-  }
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 2000);
+  };
 
   const edgeGuide = {
-    'host_left_client_right': `Move mouse off the right edge of "${hostName}" to control "${clientName}"`,
-    'host_right_client_left': `Move mouse off the left edge of "${hostName}" to control "${clientName}"`,
-    'host_top_client_bottom': `Move mouse off the bottom edge of "${hostName}" to control "${clientName}"`,
-    'host_bottom_client_top': `Move mouse off the top edge of "${hostName}" to control "${clientName}"`,
+    host_left_client_right: `Move mouse off the RIGHT edge of "${hostName}" to enter "${clientName}"`,
+    host_right_client_left: `Move mouse off the LEFT edge of "${hostName}" to enter "${clientName}"`,
+    host_top_client_bottom: `Move mouse off the BOTTOM edge of "${hostName}" to enter "${clientName}"`,
+    host_bottom_client_top: `Move mouse off the TOP edge of "${hostName}" to enter "${clientName}"`,
   }[arrangement];
 
   return (
     <div className="card p-5 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      {/* ─── Top Control Header ─── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
           <div
-            className="flex h-7 w-7 items-center justify-center rounded-md"
-            style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.2)' }}
+            className="flex h-8 w-8 items-center justify-center rounded-lg"
+            style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.25)' }}
           >
             <Monitor className="h-4 w-4" style={{ color: '#0ea5e9' }} />
           </div>
-          <span className="text-sm font-semibold" style={{ color: '#f1f5f9' }}>Screen Arrangement</span>
-          {!isConnected && (
-            <span className="badge badge-muted text-xs">Connect first to rearrange</span>
-          )}
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold tracking-tight" style={{ color: '#f1f5f9' }}>
+                Virtual Monitor Arrangement
+              </span>
+              {isSaved && (
+                <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                  <Check className="h-3 w-3" /> Saved
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Drag monitor <strong className="text-yellow-300">B</strong> to position relative to <strong className="text-sky-300">A</strong> (Windows Display Settings)
+            </p>
+          </div>
         </div>
 
-        {/* Arrangement quick-select */}
-        <div className="flex items-center gap-1">
-          {arrangements.map((a) => (
-            <button
-              key={a.key}
-              onClick={() => onArrangementChange(a.key, offsetPx / 120)}
-              title={a.key.replace(/_/g, ' ')}
-              className={`flex items-center justify-center rounded px-2 py-1 text-xs transition-all cursor-pointer ${
-                arrangement === a.key
-                  ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40'
-                  : 'text-slate-500 hover:text-slate-300 border border-transparent hover:border-white/10'
-              }`}
-            >
-              {a.icon}
-            </button>
-          ))}
+        {/* Action buttons */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Identify Button */}
+          <button
+            onClick={triggerIdentify}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md font-medium text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-all cursor-pointer"
+            title="Identify displays on screen"
+          >
+            <Eye className="h-3.5 w-3.5 text-sky-400" />
+            <span>Identify</span>
+          </button>
+
+          <div className="h-4 w-[1px] bg-white/10 mx-1" />
+
+          {/* Quick preset positions */}
+          <button
+            onClick={() => {
+              onArrangementChange('host_left_client_right', vOffsetPx / SCREEN_A_H, 0);
+              setIsSaved(true);
+              setTimeout(() => setIsSaved(false), 2000);
+            }}
+            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-medium ${
+              arrangement === 'host_left_client_right'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                : 'text-slate-400 hover:text-slate-200 border border-transparent hover:border-white/10'
+            }`}
+            title="A on Left, B on Right"
+          >
+            A ⟷ B
+          </button>
+
+          <button
+            onClick={() => {
+              onArrangementChange('host_right_client_left', vOffsetPx / SCREEN_A_H, 0);
+              setIsSaved(true);
+              setTimeout(() => setIsSaved(false), 2000);
+            }}
+            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-medium ${
+              arrangement === 'host_right_client_left'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                : 'text-slate-400 hover:text-slate-200 border border-transparent hover:border-white/10'
+            }`}
+            title="B on Left, A on Right"
+          >
+            B ⟷ A
+          </button>
+
+          <button
+            onClick={() => {
+              onArrangementChange('host_top_client_bottom', 0, hOffsetPx / SCREEN_A_W);
+              setIsSaved(true);
+              setTimeout(() => setIsSaved(false), 2000);
+            }}
+            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-medium ${
+              arrangement === 'host_top_client_bottom'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                : 'text-slate-400 hover:text-slate-200 border border-transparent hover:border-white/10'
+            }`}
+            title="A on Top, B on Bottom"
+          >
+            A ↕ B
+          </button>
+
+          <button
+            onClick={() => {
+              onArrangementChange('host_bottom_client_top', 0, hOffsetPx / SCREEN_A_W);
+              setIsSaved(true);
+              setTimeout(() => setIsSaved(false), 2000);
+            }}
+            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-medium ${
+              arrangement === 'host_bottom_client_top'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                : 'text-slate-400 hover:text-slate-200 border border-transparent hover:border-white/10'
+            }`}
+            title="B on Top, A on Bottom"
+          >
+            B ↕ A
+          </button>
+
+          <div className="h-4 w-[1px] bg-white/10 mx-1" />
+
+          {/* Alignment Buttons */}
+          {isHorizontal ? (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => applyAlignment('top')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                title="Align Top"
+              >
+                <AlignVerticalJustifyStart className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => applyAlignment('center')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                title="Align Center"
+              >
+                <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => applyAlignment('bottom')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                title="Align Bottom"
+              >
+                <AlignVerticalJustifyEnd className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => applyAlignment('left')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                title="Align Left"
+              >
+                <AlignHorizontalJustifyStart className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => applyAlignment('center')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                title="Align Center"
+              >
+                <AlignHorizontalJustifyCenter className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => applyAlignment('right')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                title="Align Right"
+              >
+                <AlignHorizontalJustifyEnd className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Canvas */}
+      {/* ─── Windows Display Settings Canvas ─── */}
       <div
-        className="relative rounded-lg overflow-hidden"
+        className="relative rounded-xl overflow-hidden select-none"
         style={{
           width: '100%',
-          height: `${CANVAS_H + 20}px`,
-          background: 'radial-gradient(ellipse at center, rgba(14,165,233,0.04) 0%, transparent 70%), #0a0d12',
-          border: '1px solid rgba(255,255,255,0.05)',
+          height: `${CANVAS_H}px`,
+          background: '#0d1117',
+          border: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)',
         }}
       >
-        {/* Grid dots */}
+        {/* Subtle dot grid */}
         <svg
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.15 }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.18 }}
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="#94a3b8" />
+            <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="2" cy="2" r="1.2" fill="#94a3b8" />
             </pattern>
           </defs>
           <rect width="100%" height="100%" fill="url(#grid)" />
         </svg>
 
-        {/* Responsive scaling wrapper */}
+        {/* Magnetic Snap Alignment Guide Line */}
+        {snapGuide && (
+          <div
+            className="absolute z-10 pointer-events-none"
+            style={{
+              left:
+                snapGuide === 'top' || snapGuide === 'center' || snapGuide === 'bottom'
+                  ? '0px'
+                  : `${hostPos.x}px`,
+              top:
+                snapGuide === 'top'
+                  ? `${hostPos.y}px`
+                  : snapGuide === 'center' && isHorizontal
+                  ? `${hostPos.y + Math.round(SCREEN_A_H / 2)}px`
+                  : snapGuide === 'bottom'
+                  ? `${hostPos.y + SCREEN_A_H}px`
+                  : snapGuide === 'center' && !isHorizontal
+                  ? '0px'
+                  : '0px',
+              width:
+                snapGuide === 'top' || snapGuide === 'center' || snapGuide === 'bottom'
+                  ? '100%'
+                  : '1px',
+              height:
+                snapGuide === 'left' || snapGuide === 'right'
+                  ? '100%'
+                  : '1px',
+              borderTop: isHorizontal ? '1px dashed #38bdf8' : 'none',
+              borderLeft: !isHorizontal ? '1px dashed #38bdf8' : 'none',
+              opacity: 0.8,
+            }}
+          />
+        )}
+
+        {/* ─── Monitor A (Host / Primary) ─── */}
         <div
-          className="absolute inset-0 flex items-center justify-center"
+          style={{
+            position: 'absolute',
+            left: `${hostPos.x}px`,
+            top: `${hostPos.y}px`,
+            width: `${SCREEN_A_W}px`,
+            height: `${SCREEN_A_H}px`,
+            zIndex: 1,
+          }}
         >
           <div
+            className={`w-full h-full rounded shadow-md flex flex-col justify-between p-2.5 transition-all relative ${
+              !isClientActive
+                ? 'ring-2 ring-sky-400 ring-offset-2 ring-offset-[#0d1117]'
+                : 'border border-blue-900/60'
+            }`}
             style={{
-              position: 'relative',
-              width: `${CANVAS_W}px`,
-              height: `${CANVAS_H}px`,
-              transform: 'scale(var(--canvas-scale, 0.9))',
+              background: '#5d7ac9', // Authentic Windows Display Settings blue
+              boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
             }}
           >
-            {/* Host Screen */}
-            <div
-              style={{
-                position: 'absolute',
-                left: `${hostPos.x}px`,
-                top: `${hostPos.y}px`,
-                width: `${SCREEN_W}px`,
-                height: `${SCREEN_H}px`,
-                transition: isDragging ? 'none' : 'all 0.3s cubic-bezier(0.4,0,0.2,1)',
-              }}
-            >
+            {/* Top row: Label + OS icon */}
+            <div className="flex items-center justify-between text-[10px] font-mono font-bold text-white/90">
+              <span className="flex items-center gap-1">
+                <span>{getOsIcon(hostOs)}</span>
+                <span>PRIMARY</span>
+              </span>
+              <span className="text-[9px] opacity-80">{hostW}×{hostH}</span>
+            </div>
+
+            {/* Center: Large circular "A" badge */}
+            <div className="flex items-center justify-center">
               <div
-                className={`w-full h-full rounded-lg flex flex-col items-center justify-between p-2 ${
-                  !isClientActive ? 'monitor-box host-active' : 'monitor-box'
+                className={`flex items-center justify-center rounded-full bg-black text-white font-extrabold shadow-md transition-transform ${
+                  showIdentify ? 'scale-125 ring-4 ring-yellow-400' : 'scale-100'
                 }`}
                 style={{
-                  background: !isClientActive
-                    ? 'linear-gradient(145deg, #0c2340 0%, #0f1a2e 100%)'
-                    : 'linear-gradient(145deg, #131d2e 0%, #0f1319 100%)',
+                  width: '38px',
+                  height: '38px',
+                  fontSize: '18px',
                 }}
               >
-                <div className="w-full flex items-center justify-between">
-                  <span className="text-[9px] font-mono text-sky-400 font-bold">HOST</span>
-                  <span className="text-[9px]">{getOsIcon(hostOs)}</span>
-                </div>
-                <div className="flex flex-col items-center gap-0.5">
-                  {!isClientActive && (
-                    <MousePointer2 className="h-3.5 w-3.5 text-sky-400" />
-                  )}
-                  <span className="text-[8px] text-center text-slate-400 leading-tight max-w-[90px] truncate font-mono">
-                    {hostName}
-                  </span>
-                </div>
-                <div className="text-[8px] font-mono" style={{ color: '#475569' }}>
-                  {hostW}×{hostH}
-                </div>
+                A
               </div>
             </div>
 
-            {/* Client Screen — Draggable */}
-            <div
-              style={{
-                position: 'absolute',
-                left: `${clientPos.x}px`,
-                top: `${clientPos.y}px`,
-                width: `${SCREEN_W}px`,
-                height: `${SCREEN_H}px`,
-                transition: isDragging ? 'none' : 'all 0.3s cubic-bezier(0.4,0,0.2,1)',
-                cursor: isConnected ? (isDragging ? 'grabbing' : 'grab') : 'default',
-                zIndex: 2,
-              }}
-              onMouseDown={handleMouseDown}
-            >
-              <div
-                className={`w-full h-full rounded-lg flex flex-col items-center justify-between p-2 ${
-                  isClientActive ? 'monitor-box client-active' : 'monitor-box'
-                }`}
-                style={{
-                  background: isConnected
-                    ? isClientActive
-                      ? 'linear-gradient(145deg, #0a2a1c 0%, #0d1f17 100%)'
-                      : 'linear-gradient(145deg, #1a2030 0%, #131720 100%)'
-                    : 'linear-gradient(145deg, #111520 0%, #0d1018 100%)',
-                  opacity: isConnected ? 1 : 0.4,
-                }}
-              >
-                <div className="w-full flex items-center justify-between">
-                  <span
-                    className="text-[9px] font-mono font-bold"
-                    style={{ color: isConnected ? '#10b981' : '#475569' }}
-                  >
-                    {isConnected ? 'CLIENT' : 'OFFLINE'}
-                  </span>
-                  <span className="text-[9px]">{isConnected ? getOsIcon(clientOs) : '⚫'}</span>
-                </div>
-                <div className="flex flex-col items-center gap-0.5">
-                  {isClientActive && (
-                    <MousePointer2 className="h-3.5 w-3.5 text-emerald-400" />
-                  )}
-                  {isConnected && (
-                    <Move className="h-2.5 w-2.5 text-slate-500" />
-                  )}
-                  <span className="text-[8px] text-center text-slate-400 leading-tight max-w-[90px] truncate font-mono">
-                    {isConnected ? clientName : 'Not Connected'}
-                  </span>
-                </div>
-                <div className="text-[8px] font-mono" style={{ color: '#475569' }}>
-                  {isConnected ? `${clientW}×${clientH}` : '— ×—'}
-                </div>
-              </div>
+            {/* Bottom: Device Name */}
+            <div className="text-center">
+              <span className="text-[10px] font-semibold text-white/95 truncate block max-w-[160px] mx-auto tracking-tight">
+                {hostName}
+              </span>
             </div>
 
-            {/* Connection bridge line */}
-            {isConnected && (
-              <svg
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  pointerEvents: 'none',
-                  zIndex: 1,
-                }}
-              >
-                {isHorizontal ? (
-                  <>
-                    <line
-                      x1={isHostLeft ? hostPos.x + SCREEN_W : clientPos.x + SCREEN_W}
-                      y1={isHostLeft ? hostPos.y + SCREEN_H / 2 : clientPos.y + SCREEN_H / 2}
-                      x2={isHostLeft ? clientPos.x : hostPos.x}
-                      y2={isHostLeft ? clientPos.y + SCREEN_H / 2 : hostPos.y + SCREEN_H / 2}
-                      stroke="rgba(14,165,233,0.4)"
-                      strokeWidth="1.5"
-                      strokeDasharray="4 3"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <line
-                      x1={isHostTop ? hostPos.x + SCREEN_W / 2 : clientPos.x + SCREEN_W / 2}
-                      y1={isHostTop ? hostPos.y + SCREEN_H : clientPos.y + SCREEN_H}
-                      x2={isHostTop ? clientPos.x + SCREEN_W / 2 : hostPos.x + SCREEN_W / 2}
-                      y2={isHostTop ? clientPos.y : hostPos.y}
-                      stroke="rgba(14,165,233,0.4)"
-                      strokeWidth="1.5"
-                      strokeDasharray="4 3"
-                    />
-                  </>
-                )}
-              </svg>
+            {/* Active cursor indicator on Host */}
+            {!isClientActive && (
+              <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/40 rounded px-1.5 py-0.5 text-[9px] text-sky-200">
+                <MousePointer2 className="h-3 w-3 text-sky-300" />
+                <span>Active</span>
+              </div>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Guide + switch button */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-start gap-2 text-xs" style={{ color: '#64748b' }}>
-          <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-sky-500" />
-          <span>
-            {isConnected
-              ? edgeGuide
-              : 'Connect two computers to arrange their screens and enable seamless mouse movement.'}
-          </span>
+        {/* ─── Monitor B (Client / Remote) ─── Draggable */}
+        <div
+          style={{
+            position: 'absolute',
+            left: `${clientPos.x}px`,
+            top: `${clientPos.y}px`,
+            width: `${SCREEN_B_W}px`,
+            height: `${SCREEN_B_H}px`,
+            zIndex: 2,
+            cursor: isDragging ? 'grabbing' : 'grab',
+            transition: isDragging ? 'none' : 'box-shadow 0.2s',
+          }}
+          onMouseDown={handleMouseDown}
+        >
+          <div
+            className={`w-full h-full rounded shadow-md flex flex-col justify-between p-2.5 transition-all relative ${
+              isClientActive
+                ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-[#0d1117]'
+                : isDragging
+                ? 'ring-2 ring-yellow-300 shadow-2xl'
+                : 'border border-yellow-800/60'
+            }`}
+            style={{
+              background: '#98a306', // Authentic Windows Display Settings olive/yellow-green
+              boxShadow: isDragging ? '0 10px 25px rgba(0,0,0,0.6)' : '0 4px 12px rgba(0,0,0,0.35)',
+              opacity: isConnected ? 1 : 0.8,
+            }}
+          >
+            {/* Top row: Label + OS icon */}
+            <div className="flex items-center justify-between text-[10px] font-mono font-bold text-white/90">
+              <span className="flex items-center gap-1">
+                <span>{getOsIcon(clientOs)}</span>
+                <span>{isConnected ? 'REMOTE' : 'CLIENT'}</span>
+              </span>
+              <span className="text-[9px] opacity-80">{clientW}×{clientH}</span>
+            </div>
+
+            {/* Center: Large circular "B" badge */}
+            <div className="flex items-center justify-center relative">
+              <div
+                className={`flex items-center justify-center rounded-full bg-black text-white font-extrabold shadow-md transition-transform ${
+                  showIdentify ? 'scale-125 ring-4 ring-yellow-400' : 'scale-100'
+                }`}
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  fontSize: '18px',
+                }}
+              >
+                B
+              </div>
+            </div>
+
+            {/* Bottom: Device Name */}
+            <div className="text-center">
+              <span className="text-[10px] font-semibold text-white/95 truncate block max-w-[160px] mx-auto tracking-tight">
+                {clientName}
+              </span>
+            </div>
+
+            {/* Drag Handle Indicator */}
+            <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/40 rounded px-1.5 py-0.5 text-[9px] text-yellow-200">
+              {isClientActive ? (
+                <>
+                  <MousePointer2 className="h-3 w-3 text-emerald-300" />
+                  <span>Active</span>
+                </>
+              ) : (
+                <>
+                  <Move className="h-2.5 w-2.5" />
+                  <span>Drag</span>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
-        {isConnected && (
+        {/* ─── Touching Contact Seam Glowing Highlight ─── */}
+        <div
+          className="absolute z-10 pointer-events-none"
+          style={{
+            left:
+              arrangement === 'host_left_client_right'
+                ? `${hostPos.x + SCREEN_A_W - 1}px`
+                : arrangement === 'host_right_client_left'
+                ? `${hostPos.x - 1}px`
+                : arrangement === 'host_top_client_bottom'
+                ? `${Math.max(hostPos.x, clientPos.x)}px`
+                : `${Math.max(hostPos.x, clientPos.x)}px`,
+            top:
+              arrangement === 'host_top_client_bottom'
+                ? `${hostPos.y + SCREEN_A_H - 1}px`
+                : arrangement === 'host_bottom_client_top'
+                ? `${hostPos.y - 1}px`
+                : `${Math.max(hostPos.y, clientPos.y)}px`,
+            width: isHorizontal
+              ? '3px'
+              : `${Math.min(hostPos.x + SCREEN_A_W, clientPos.x + SCREEN_B_W) - Math.max(hostPos.x, clientPos.x)}px`,
+            height: isHorizontal
+              ? `${Math.min(hostPos.y + SCREEN_A_H, clientPos.y + SCREEN_B_H) - Math.max(hostPos.y, clientPos.y)}px`
+              : '3px',
+            background: 'linear-gradient(to right, #38bdf8, #10b981)',
+            boxShadow: '0 0 10px #38bdf8',
+            borderRadius: '2px',
+          }}
+        />
+      </div>
+
+      {/* ─── Bottom Status & Quick Switch ─── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <div className="flex items-center gap-2 text-xs" style={{ color: '#94a3b8' }}>
+          <Info className="h-4 w-4 text-sky-400 flex-shrink-0" />
+          <span>{edgeGuide}</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Offset readout */}
+          <div className="text-xs font-mono text-slate-400 bg-slate-900/80 px-2.5 py-1 rounded border border-white/5">
+            {isHorizontal ? (
+              <span>
+                Vertical offset:{' '}
+                <strong className={vOffsetPx === 0 ? 'text-sky-400' : 'text-yellow-400'}>
+                  {vOffsetPx === 0 ? '0px (Aligned)' : `${vOffsetPx > 0 ? `+${vOffsetPx}` : vOffsetPx}px`}
+                </strong>
+              </span>
+            ) : (
+              <span>
+                Horizontal offset:{' '}
+                <strong className={hOffsetPx === 0 ? 'text-sky-400' : 'text-yellow-400'}>
+                  {hOffsetPx === 0 ? '0px (Aligned)' : `${hOffsetPx > 0 ? `+${hOffsetPx}` : hOffsetPx}px`}
+                </strong>
+              </span>
+            )}
+          </div>
+
+          {/* Quick toggle screen button */}
           <button
             onClick={onSimulateEdgeCross}
-            className="btn-secondary whitespace-nowrap text-xs px-3 py-1.5"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 transition-all cursor-pointer shadow-md"
           >
             <ChevronRight className="h-3.5 w-3.5" />
-            {isClientActive ? 'Return to Host' : 'Switch to Remote'}
+            <span>{isClientActive ? 'Return to Host (A)' : 'Switch to Remote (B)'}</span>
           </button>
-        )}
+        </div>
       </div>
 
-      {isConnected && (
-        <div className="text-xs font-mono text-center" style={{ color: '#334155' }}>
-          Offset: {offsetPx > 0 ? `+${offsetPx}px` : `${offsetPx}px`} •
-          Emergency return: <kbd className="px-1 rounded bg-slate-800 text-slate-400">Ctrl+Alt+Esc</kbd>
-        </div>
-      )}
+      <div className="text-[11px] font-mono text-center text-slate-500">
+        Emergency Return Hotkey: <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">Ctrl + Alt + Esc</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">Pause</kbd>
+      </div>
     </div>
   );
 };

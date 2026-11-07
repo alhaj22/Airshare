@@ -32,31 +32,61 @@ pub fn clear_keyboard_hook_sender() {
 
 #[cfg(windows)]
 fn vk_to_char(vk_code: u32, shift: bool) -> Option<String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        GetKeyboardState, MapVirtualKeyW, ToUnicode, MAPVK_VK_TO_VSC,
-    };
-    unsafe {
-        let mut key_state = [0u8; 256];
-        GetKeyboardState(key_state.as_mut_ptr());
-        if shift {
-            key_state[0x10] = 0x80; // VK_SHIFT
-        }
-        let scan_code = MapVirtualKeyW(vk_code, MAPVK_VK_TO_VSC);
-        let mut buff = [0u16; 8];
-        let res = ToUnicode(
-            vk_code,
-            scan_code,
-            key_state.as_ptr(),
-            buff.as_mut_ptr(),
-            buff.len() as i32,
-            0,
-        );
-        if res > 0 {
-            String::from_utf16(&buff[..res as usize]).ok()
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, MAPVK_VK_TO_CHAR};
+
+    // Letters A-Z
+    if (0x41..=0x5A).contains(&vk_code) {
+        let ch = if shift {
+            (vk_code as u8) as char
         } else {
-            None
+            ((vk_code as u8) + 32) as char
+        };
+        return Some(ch.to_string());
+    }
+
+    // Numbers 0-9
+    if (0x30..=0x39).contains(&vk_code) {
+        if !shift {
+            return Some(((vk_code as u8) as char).to_string());
+        } else {
+            let s = match vk_code {
+                0x30 => ")", 0x31 => "!", 0x32 => "@", 0x33 => "#", 0x34 => "$",
+                0x35 => "%", 0x36 => "^", 0x37 => "&", 0x38 => "*", 0x39 => "(",
+                _ => "",
+            };
+            return Some(s.to_string());
         }
     }
+
+    // Common punctuation & control chars
+    let sym = match (vk_code, shift) {
+        (0x20, _) => " ",
+        (0xBA, false) => ";", (0xBA, true) => ":",
+        (0xBB, false) => "=", (0xBB, true) => "+",
+        (0xBC, false) => ",", (0xBC, true) => "<",
+        (0xBD, false) => "-", (0xBD, true) => "_",
+        (0xBE, false) => ".", (0xBE, true) => ">",
+        (0xBF, false) => "/", (0xBF, true) => "?",
+        (0xC0, false) => "`", (0xC0, true) => "~",
+        (0xDB, false) => "[", (0xDB, true) => "{",
+        (0xDC, false) => "\\", (0xDC, true) => "|",
+        (0xDD, false) => "]", (0xDD, true) => "}",
+        (0xDE, false) => "'", (0xDE, true) => "\"",
+        (0x09, _) => "\t",
+        (0x0D, _) => "\n",
+        _ => {
+            let mapped = unsafe { MapVirtualKeyW(vk_code, MAPVK_VK_TO_CHAR) };
+            if mapped > 0 && mapped < 0xFFFE {
+                if let Some(c) = char::from_u32(mapped) {
+                    if !c.is_control() {
+                        return Some(c.to_string());
+                    }
+                }
+            }
+            return None;
+        }
+    };
+    Some(sym.to_string())
 }
 
 pub struct KeyboardHookManager {
@@ -128,7 +158,7 @@ impl KeyboardHookManager {
                             // Emergency escape shortcut: Ctrl + Alt + Shift + Escape OR Ctrl + Alt + Escape OR Pause key
                             if (vk_code == VK_ESCAPE as u32 && is_down) || (vk_code == 0x13 && is_down) {
                                 let ctrl = (GetAsyncKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0;
-                                let alt = (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0;
+                                let alt = (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0 || (kb.flags & 0x20) != 0;
 
                                 if (ctrl && alt) || vk_code == 0x13 {
                                     info!("Emergency recall activated! Returning control to Host.");
@@ -156,7 +186,7 @@ impl KeyboardHookManager {
                                         if (GetAsyncKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0 {
                                             modifiers |= 2;
                                         }
-                                        if (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0 {
+                                        if (GetAsyncKeyState(VK_MENU as i32) as u16 & 0x8000) != 0 || (kb.flags & 0x20) != 0 {
                                             modifiers |= 4;
                                         }
                                         if (GetAsyncKeyState(0x5B) as u16 & 0x8000) != 0 || (GetAsyncKeyState(0x5C) as u16 & 0x8000) != 0 {
@@ -398,7 +428,6 @@ mod macos_keyboard {
 
             while is_running.load(Ordering::SeqCst) {
                 CFRunLoopRun();
-                break;
             }
 
             CFRelease(source);

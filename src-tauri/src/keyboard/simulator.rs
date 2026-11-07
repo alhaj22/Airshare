@@ -1,6 +1,7 @@
 #[cfg(windows)]
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, KEYBDINPUT,
+    MapVirtualKeyW, SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
+    KEYEVENTF_UNICODE, KEYBDINPUT, MAPVK_VK_TO_VSC,
 };
 
 #[cfg(target_os = "macos")]
@@ -9,11 +10,13 @@ mod macos {
 
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
+        pub fn CGEventSourceCreate(stateID: i32) -> *mut c_void;
         pub fn CGEventCreateKeyboardEvent(
             source: *mut c_void,
             virtualKey: u16,
             keyDown: bool,
         ) -> *mut c_void;
+        pub fn CGEventSetType(event: *mut c_void, eventType: u32);
         pub fn CGEventKeyboardSetUnicodeString(
             event: *mut c_void,
             stringLength: usize,
@@ -278,10 +281,11 @@ impl KeyboardSimulator {
                     vk_code,
                     0x21..=0x28 | 0x2D | 0x2E | 0x5B | 0x5C | 0xA3 | 0xA5
                 );
+                let scan = MapVirtualKeyW(vk_code, MAPVK_VK_TO_VSC) as u16;
 
                 let mut flags = if is_down { 0 } else { KEYEVENTF_KEYUP };
                 if is_extended {
-                    flags |= 0x0001; // KEYEVENTF_EXTENDEDKEY
+                    flags |= KEYEVENTF_EXTENDEDKEY;
                 }
 
                 let mut input = INPUT {
@@ -289,7 +293,7 @@ impl KeyboardSimulator {
                     Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
                         ki: KEYBDINPUT {
                             wVk: vk_code as u16,
-                            wScan: 0,
+                            wScan: scan,
                             dwFlags: flags,
                             time: 0,
                             dwExtraInfo: 0,
@@ -324,7 +328,8 @@ impl KeyboardSimulator {
             let mac_code = win_vk_to_mac_key(vk_code);
             let code_to_use = if mac_code != 0xFFFF { mac_code } else { 0 };
 
-            let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), code_to_use, is_down);
+            let source = CGEventSourceCreate(1 /* kCGEventSourceStateCombinedSessionState */);
+            let evt = CGEventCreateKeyboardEvent(source, code_to_use, is_down);
             if !evt.is_null() {
                 // Map Windows modifier bitmask to macOS CoreGraphics CGEventFlags:
                 // Bit 0: Shift -> kCGEventFlagMaskShift (0x00020000)
@@ -349,17 +354,29 @@ impl KeyboardSimulator {
                     CGEventSetFlags(evt, cg_flags);
                 }
 
-                // If virtual key wasn't directly mapped, fallback to Unicode string insertion
-                if mac_code == 0xFFFF {
+                // On macOS, modifier keys MUST generate kCGEventFlagsChanged (12), not KeyDown/KeyUp!
+                let is_modifier_key = matches!(mac_code, 54..=62);
+                if is_modifier_key {
+                    CGEventSetType(evt, 12 /* kCGEventFlagsChanged */);
+                }
+
+                // For printable text characters on key down without Cmd/Ctrl shortcuts, set Unicode directly
+                if is_down && !is_modifier_key && (modifiers & 6 == 0) {
                     if let Some(ch) = key_char {
                         let utf16: Vec<u16> = ch.encode_utf16().collect();
-                        CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
+                        if !utf16.is_empty() {
+                            CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
+                        }
                     }
                 }
 
-                // Post exclusively to kCGHIDEventTap (0) for native system-wide hardware input
+                // Post to session event tap (1) for direct app dispatch and HID tap (0) for system
+                CGEventPost(1 /* kCGSessionEventTap */, evt);
                 CGEventPost(0 /* kCGHIDEventTap */, evt);
                 CFRelease(evt);
+            }
+            if !source.is_null() {
+                CFRelease(source);
             }
         }
     }
