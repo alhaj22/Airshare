@@ -41,7 +41,36 @@ fn get_screen_resolution() -> (u32, u32) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn get_screen_resolution() -> (u32, u32) {
+    // Use CoreGraphics to get the main display resolution on macOS
+    use std::process::Command;
+    let output = Command::new("system_profiler")
+        .args(["SPDisplaysDataType", "-json"])
+        .output();
+    if let Ok(out) = output {
+        let s = String::from_utf8_lossy(&out.stdout);
+        // Quick parse: look for "Resolution" field like "1440 x 900"
+        for line in s.lines() {
+            if line.contains("_spdisplays_resolution") {
+                let parts: Vec<&str> = line.split('"').collect();
+                if parts.len() >= 4 {
+                    let res = parts[3];
+                    let nums: Vec<u32> = res
+                        .split_whitespace()
+                        .filter_map(|t| t.parse::<u32>().ok())
+                        .collect();
+                    if nums.len() >= 2 {
+                        return (nums[0], nums[1]);
+                    }
+                }
+            }
+        }
+    }
+    (1920, 1080)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn get_screen_resolution() -> (u32, u32) {
     (1920, 1080)
 }
@@ -581,6 +610,12 @@ async fn get_connection_status(state: tauri::State<'_, AppState>) -> Result<Conn
     })
 }
 
+/// Returns the host OS name as a lowercase string: "windows", "macos", or "linux"
+#[tauri::command]
+async fn get_host_os(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    Ok(state.sys_info.os.to_lowercase())
+}
+
 fn dirs_fallback() -> PathBuf {
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
@@ -658,6 +693,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_system_info,
+            get_host_os,
             create_connection_pin,
             join_connection,
             get_discovered_devices,

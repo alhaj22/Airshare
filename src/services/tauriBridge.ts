@@ -74,6 +74,22 @@ export const api = {
     };
   },
 
+  async getHostOs(): Promise<DeviceOS> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const os = await invoke<string>('get_host_os');
+        if (os.includes('mac')) return 'macos';
+        if (os.includes('win')) return 'windows';
+        return 'linux';
+      } catch (err) {
+        console.warn('Failed to get host OS from Tauri', err);
+      }
+    }
+    const isMac = navigator.userAgent.toLowerCase().includes('mac');
+    return isMac ? 'macos' : 'windows';
+  },
+
   async createConnectionPin(): Promise<HostPinResponse> {
     if (isTauri) {
       try {

@@ -144,6 +144,123 @@ mod macos {
     }
 }
 
+pub fn mac_key_to_win_vk(mac_key: u16) -> u32 {
+    match mac_key {
+        // Letters A-Z
+        0 => 0x41,  // A
+        11 => 0x42, // B
+        8 => 0x43,  // C
+        2 => 0x44,  // D
+        14 => 0x45, // E
+        3 => 0x46,  // F
+        5 => 0x47,  // G
+        4 => 0x48,  // H
+        34 => 0x49, // I
+        38 => 0x4A, // J
+        40 => 0x4B, // K
+        37 => 0x4C, // L
+        46 => 0x4D, // M
+        45 => 0x4E, // N
+        31 => 0x4F, // O
+        35 => 0x50, // P
+        12 => 0x51, // Q
+        15 => 0x52, // R
+        1 => 0x53,  // S
+        17 => 0x54, // T
+        32 => 0x55, // U
+        9 => 0x56,  // V
+        13 => 0x57, // W
+        7 => 0x58,  // X
+        16 => 0x59, // Y
+        6 => 0x5A,  // Z
+
+        // Numbers 0-9
+        29 => 0x30, // 0
+        18 => 0x31, // 1
+        19 => 0x32, // 2
+        20 => 0x33, // 3
+        21 => 0x34, // 4
+        23 => 0x35, // 5
+        22 => 0x36, // 6
+        26 => 0x37, // 7
+        28 => 0x38, // 8
+        25 => 0x39, // 9
+
+        // Controls & Whitespace
+        51 => 0x08, // Delete/Backspace -> VK_BACK
+        48 => 0x09, // Tab -> VK_TAB
+        36 => 0x0D, // Return/Enter -> VK_RETURN
+        57 => 0x14, // CapsLock -> VK_CAPITAL
+        53 => 0x1B, // Escape -> VK_ESCAPE
+        49 => 0x20, // Space -> VK_SPACE
+
+        // Navigation & Arrows
+        123 => 0x25, // Left Arrow
+        126 => 0x26, // Up Arrow
+        124 => 0x27, // Right Arrow
+        125 => 0x28, // Down Arrow
+        117 => 0x2E, // Forward Delete -> VK_DELETE
+        115 => 0x24, // Home -> VK_HOME
+        119 => 0x23, // End -> VK_END
+        116 => 0x21, // PageUp -> VK_PRIOR
+        121 => 0x22, // PageDown -> VK_NEXT
+        114 => 0x2D, // Help/Insert -> VK_INSERT
+
+        // Function Keys F1 - F12
+        122 => 0x70, // F1
+        120 => 0x71, // F2
+        99 => 0x72,  // F3
+        118 => 0x73, // F4
+        96 => 0x74,  // F5
+        97 => 0x75,  // F6
+        98 => 0x76,  // F7
+        100 => 0x77, // F8
+        101 => 0x78, // F9
+        109 => 0x79, // F10
+        103 => 0x7A, // F11
+        111 => 0x7B, // F12
+
+        // Modifiers: Mac Command translates to Windows Ctrl!
+        55 | 54 => 0x11, // Mac Command -> Windows VK_CONTROL
+        58 | 61 => 0x12, // Mac Option/Alt -> Windows VK_MENU (Alt)
+        59 | 62 => 0x5B, // Mac Control -> Windows VK_LWIN
+        56 | 60 => 0x10, // Mac Shift -> Windows VK_SHIFT
+
+        // Symbols & Punctuation
+        41 => 0xBA, // ;
+        24 => 0xBB, // =
+        43 => 0xBC, // ,
+        27 => 0xBD, // -
+        47 => 0xBE, // .
+        44 => 0xBF, // /
+        50 => 0xC0, // `
+        33 => 0xDB, // [
+        42 => 0xDC, // \
+        30 => 0xDD, // ]
+        39 => 0xDE, // '
+
+        // Numpad
+        82 => 0x60, // Num 0
+        83 => 0x61, // Num 1
+        84 => 0x62, // Num 2
+        85 => 0x63, // Num 3
+        86 => 0x64, // Num 4
+        87 => 0x65, // Num 5
+        88 => 0x66, // Num 6
+        89 => 0x67, // Num 7
+        91 => 0x68, // Num 8
+        92 => 0x69, // Num 9
+        67 => 0x6A, // Num *
+        69 => 0x6B, // Num +
+        78 => 0x6D, // Num -
+        65 => 0x6E, // Num .
+        75 => 0x6F, // Num /
+        76 => 0x0D, // Num Enter
+
+        _ => 0,
+    }
+}
+
 pub struct KeyboardSimulator;
 
 impl KeyboardSimulator {
@@ -155,7 +272,18 @@ impl KeyboardSimulator {
         #[cfg(windows)]
         unsafe {
             if vk_code > 0 {
-                let flags = if is_down { 0 } else { KEYEVENTF_KEYUP };
+                // Determine whether this key requires the KEYEVENTF_EXTENDEDKEY flag on Windows:
+                // Extended keys include arrows, Insert, Delete, Home, End, PageUp, PageDown, Right Ctrl/Alt, Win keys.
+                let is_extended = matches!(
+                    vk_code,
+                    0x21..=0x28 | 0x2D | 0x2E | 0x5B | 0x5C | 0xA3 | 0xA5
+                );
+
+                let mut flags = if is_down { 0 } else { KEYEVENTF_KEYUP };
+                if is_extended {
+                    flags |= 0x0001; // KEYEVENTF_EXTENDEDKEY
+                }
+
                 let mut input = INPUT {
                     r#type: INPUT_KEYBOARD,
                     Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {

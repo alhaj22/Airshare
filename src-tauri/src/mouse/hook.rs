@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use serde::{Deserialize, Serialize};
 
+#[allow(unused_imports)]
 use crate::network::protocol::{MouseButtonPayload, MouseMovePayload, MouseWheelPayload, NetworkMessage, SwitchScreenPayload};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -19,14 +20,13 @@ pub enum ActiveScreen {
     Client,
 }
 
-#[cfg(windows)]
 lazy_static::lazy_static! {
     static ref MOUSE_HOOK_TX: std::sync::Mutex<Option<mpsc::UnboundedSender<NetworkMessage>>> = std::sync::Mutex::new(None);
     static ref UI_EVENT_TX: std::sync::Mutex<Option<mpsc::UnboundedSender<String>>> = std::sync::Mutex::new(None);
     static ref CURRENT_ARRANGEMENT: std::sync::RwLock<ScreenArrangement> = std::sync::RwLock::new(ScreenArrangement::HostLeftClientRight);
     static ref CURRENT_ACTIVE_SCREEN: std::sync::RwLock<ActiveScreen> = std::sync::RwLock::new(ActiveScreen::Host);
-    static ref SCREEN_DIMENSIONS: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((1366, 768));
-    static ref REMOTE_SCREEN_SIZE: std::sync::RwLock<(f32, f32)> = std::sync::RwLock::new((1440.0, 900.0));
+    static ref SCREEN_DIMENSIONS: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((1920, 1080));
+    static ref REMOTE_SCREEN_SIZE: std::sync::RwLock<(f32, f32)> = std::sync::RwLock::new((1920.0, 1080.0));
     static ref LAST_CURSOR: std::sync::RwLock<(i32, i32)> = std::sync::RwLock::new((0, 0));
     static ref VERTICAL_OFFSET_RATIO: std::sync::RwLock<f32> = std::sync::RwLock::new(0.0);
     static ref VIRTUAL_REMOTE_POS: std::sync::RwLock<(f32, f32)> = std::sync::RwLock::new((0.0, 0.5));
@@ -34,47 +34,31 @@ lazy_static::lazy_static! {
 }
 
 pub fn get_current_active_screen() -> ActiveScreen {
-    #[cfg(windows)]
-    {
-        CURRENT_ACTIVE_SCREEN.read().map(|s| *s).unwrap_or(ActiveScreen::Host)
-    }
-    #[cfg(not(windows))]
-    {
-        ActiveScreen::Host
-    }
+    CURRENT_ACTIVE_SCREEN.read().map(|s| *s).unwrap_or(ActiveScreen::Host)
 }
 
 pub fn set_current_active_screen(screen: ActiveScreen) {
-    #[cfg(windows)]
-    {
-        if let Ok(mut s) = CURRENT_ACTIVE_SCREEN.write() {
-            *s = screen;
-        }
-        if let Ok(mut t) = LAST_SWITCH_TIME.write() {
-            *t = Some(std::time::Instant::now());
-        }
+    if let Ok(mut s) = CURRENT_ACTIVE_SCREEN.write() {
+        *s = screen;
+    }
+    if let Ok(mut t) = LAST_SWITCH_TIME.write() {
+        *t = Some(std::time::Instant::now());
     }
     crate::keyboard::set_keyboard_active_screen(screen);
 }
 
 pub fn clear_mouse_hook_sender() {
-    #[cfg(windows)]
-    {
-        if let Ok(mut tx) = MOUSE_HOOK_TX.lock() {
-            *tx = None;
-        }
-        if let Ok(mut ui) = UI_EVENT_TX.lock() {
-            *ui = None;
-        }
+    if let Ok(mut tx) = MOUSE_HOOK_TX.lock() {
+        *tx = None;
+    }
+    if let Ok(mut ui) = UI_EVENT_TX.lock() {
+        *ui = None;
     }
 }
 
 pub fn set_remote_screen_size(width: u32, height: u32) {
-    #[cfg(windows)]
-    {
-        if let Ok(mut rem) = REMOTE_SCREEN_SIZE.write() {
-            *rem = (width.max(800) as f32, height.max(600) as f32);
-        }
+    if let Ok(mut rem) = REMOTE_SCREEN_SIZE.write() {
+        *rem = (width.max(800) as f32, height.max(600) as f32);
     }
 }
 
@@ -88,11 +72,8 @@ pub struct MouseEdgeMonitor {
 
 impl MouseEdgeMonitor {
     pub fn new(screen_width: u32, screen_height: u32) -> Self {
-        #[cfg(windows)]
-        {
-            if let Ok(mut dims) = SCREEN_DIMENSIONS.write() {
-                *dims = (screen_width as i32, screen_height as i32);
-            }
+        if let Ok(mut dims) = SCREEN_DIMENSIONS.write() {
+            *dims = (screen_width as i32, screen_height as i32);
         }
 
         Self {
@@ -106,20 +87,14 @@ impl MouseEdgeMonitor {
 
     pub async fn set_arrangement(&self, arrangement: ScreenArrangement) {
         *self.arrangement.write().await = arrangement;
-        #[cfg(windows)]
-        {
-            if let Ok(mut arr) = CURRENT_ARRANGEMENT.write() {
-                *arr = arrangement;
-            }
+        if let Ok(mut arr) = CURRENT_ARRANGEMENT.write() {
+            *arr = arrangement;
         }
     }
 
     pub async fn set_vertical_offset(&self, offset: f32) {
-        #[cfg(windows)]
-        {
-            if let Ok(mut off) = VERTICAL_OFFSET_RATIO.write() {
-                *off = offset;
-            }
+        if let Ok(mut off) = VERTICAL_OFFSET_RATIO.write() {
+            *off = offset;
         }
     }
 
@@ -146,6 +121,19 @@ impl MouseEdgeMonitor {
                 }
             }
         }
+
+        #[cfg(target_os = "macos")]
+        {
+            let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1920, 1080));
+            let center_x = screen_w / 2;
+            let center_y = screen_h / 2;
+            unsafe {
+                macos_mouse::CGWarpMouseCursorPosition(macos_mouse::CGPoint {
+                    x: center_x as f64,
+                    y: center_y as f64,
+                });
+            }
+        }
     }
 
     pub fn start_monitor(
@@ -156,14 +144,19 @@ impl MouseEdgeMonitor {
         self.is_running.store(true, Ordering::SeqCst);
         let is_running = self.is_running.clone();
 
-        #[cfg(windows)]
+        if let Ok(mut tx) = MOUSE_HOOK_TX.lock() {
+            *tx = Some(network_tx);
+        }
+        if let Ok(mut ui_tx) = UI_EVENT_TX.lock() {
+            *ui_tx = Some(ui_event_tx);
+        }
+
+        #[cfg(target_os = "macos")]
         {
-            if let Ok(mut tx) = MOUSE_HOOK_TX.lock() {
-                *tx = Some(network_tx);
-            }
-            if let Ok(mut ui_tx) = UI_EVENT_TX.lock() {
-                *ui_tx = Some(ui_event_tx);
-            }
+            let running = is_running.clone();
+            std::thread::spawn(move || {
+                macos_mouse::run_macos_mouse_loop(running);
+            });
         }
 
         std::thread::spawn(move || {
@@ -439,5 +432,348 @@ impl MouseEdgeMonitor {
 
     pub fn stop(&self) {
         self.is_running.store(false, Ordering::SeqCst);
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod macos_mouse {
+    use std::os::raw::c_void;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use crate::network::protocol::{
+        MouseButtonPayload, MouseMovePayload, MouseWheelPayload, NetworkMessage,
+        SwitchScreenPayload,
+    };
+    use super::{
+        set_current_active_screen, ActiveScreen, ScreenArrangement,
+        CURRENT_ACTIVE_SCREEN, CURRENT_ARRANGEMENT, LAST_SWITCH_TIME, MOUSE_HOOK_TX,
+        REMOTE_SCREEN_SIZE, SCREEN_DIMENSIONS, UI_EVENT_TX, VERTICAL_OFFSET_RATIO,
+        VIRTUAL_REMOTE_POS,
+    };
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct CGPoint {
+        pub x: f64,
+        pub y: f64,
+    }
+
+    pub type CGEventTapProxy = *mut c_void;
+    pub type CGEventRef = *mut c_void;
+    pub type CFMachPortRef = *mut c_void;
+    pub type CFRunLoopSourceRef = *mut c_void;
+    pub type CFRunLoopRef = *mut c_void;
+
+    pub type CGEventTapCallback = extern "C" fn(
+        proxy: CGEventTapProxy,
+        event_type: u32,
+        event: CGEventRef,
+        refcon: *mut c_void,
+    ) -> CGEventRef;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        pub fn CGEventTapCreate(
+            tap: u32,
+            place: u32,
+            options: u32,
+            eventsOfInterest: u64,
+            callback: CGEventTapCallback,
+            refcon: *mut c_void,
+        ) -> CFMachPortRef;
+        pub fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
+        pub fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
+        pub fn CGEventGetIntegerValueField(event: CGEventRef, field: u32) -> i64;
+        pub fn CGWarpMouseCursorPosition(newCursorPosition: CGPoint) -> i32;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        pub fn CFMachPortCreateRunLoopSource(
+            allocator: *mut c_void,
+            port: CFMachPortRef,
+            order: isize,
+        ) -> CFRunLoopSourceRef;
+        pub fn CFRunLoopGetCurrent() -> CFRunLoopRef;
+        pub fn CFRunLoopAddSource(rl: CFRunLoopRef, source: CFRunLoopSourceRef, mode: *const c_void);
+        pub fn CFRunLoopRun();
+        pub fn CFRelease(cf: *mut c_void);
+        pub static kCFRunLoopCommonModes: *const c_void;
+    }
+
+    pub extern "C" fn mouse_tap_proc(
+        _proxy: CGEventTapProxy,
+        event_type: u32,
+        event: CGEventRef,
+        _refcon: *mut c_void,
+    ) -> CGEventRef {
+        let active_screen = CURRENT_ACTIVE_SCREEN.read().map(|s| *s).unwrap_or(ActiveScreen::Host);
+        let arrangement = CURRENT_ARRANGEMENT.read().map(|a| *a).unwrap_or(ScreenArrangement::HostLeftClientRight);
+        let (screen_w, screen_h) = SCREEN_DIMENSIONS.read().map(|d| *d).unwrap_or((1920, 1080));
+        let (rem_w, rem_h) = REMOTE_SCREEN_SIZE.read().map(|d| *d).unwrap_or((1920.0, 1080.0));
+
+        let loc = unsafe { CGEventGetLocation(event) };
+        let x = loc.x as i32;
+        let y = loc.y as i32;
+
+        let in_cooldown = if let Ok(t_guard) = LAST_SWITCH_TIME.read() {
+            t_guard.map(|t| t.elapsed().as_millis() < 400).unwrap_or(false)
+        } else {
+            false
+        };
+
+        if active_screen == ActiveScreen::Host {
+            if in_cooldown {
+                return event;
+            }
+
+            let crossed = match arrangement {
+                ScreenArrangement::HostLeftClientRight => x >= screen_w - 2,
+                ScreenArrangement::HostRightClientLeft => x <= 1,
+                ScreenArrangement::HostTopClientBottom => y >= screen_h - 2,
+                ScreenArrangement::HostBottomClientTop => y <= 1,
+            };
+
+            if crossed {
+                let offset = VERTICAL_OFFSET_RATIO.read().map(|o| *o).unwrap_or(0.0);
+                let y_ratio = ((y as f32 / screen_h as f32) - offset).clamp(0.0, 1.0);
+                let x_ratio = (x as f32 / screen_w as f32).clamp(0.0, 1.0);
+
+                if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
+                    match arrangement {
+                        ScreenArrangement::HostLeftClientRight => {
+                            *rpos = (10.0, y_ratio * rem_h);
+                        }
+                        ScreenArrangement::HostRightClientLeft => {
+                            *rpos = (rem_w - 10.0, y_ratio * rem_h);
+                        }
+                        ScreenArrangement::HostTopClientBottom => {
+                            *rpos = (x_ratio * rem_w, 10.0);
+                        }
+                        ScreenArrangement::HostBottomClientTop => {
+                            *rpos = (x_ratio * rem_w, rem_h - 10.0);
+                        }
+                    }
+                }
+
+                set_current_active_screen(ActiveScreen::Client);
+
+                let center_x = screen_w / 2;
+                let center_y = screen_h / 2;
+                unsafe {
+                    CGWarpMouseCursorPosition(CGPoint { x: center_x as f64, y: center_y as f64 });
+                }
+
+                if let Ok(tx_guard) = MOUSE_HOOK_TX.lock() {
+                    if let Some(tx) = &*tx_guard {
+                        let _ = tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
+                            active_device: "client".to_string(),
+                            entry_y_ratio: y_ratio,
+                        }));
+                    }
+                }
+
+                if let Ok(ui_guard) = UI_EVENT_TX.lock() {
+                    if let Some(ui_tx) = &*ui_guard {
+                        let _ = ui_tx.send("active_screen:client".to_string());
+                    }
+                }
+
+                return std::ptr::null_mut(); // Swallow event
+            }
+
+            return event;
+        }
+
+        // ActiveScreen::Client: stream events to remote peer
+        let center_x = screen_w / 2;
+        let center_y = screen_h / 2;
+
+        let mut has_sender = false;
+        if let Ok(tx_guard) = MOUSE_HOOK_TX.lock() {
+            if let Some(tx) = &*tx_guard {
+                has_sender = true;
+                match event_type {
+                    5 /* MouseMoved */ | 6 /* LeftMouseDragged */ | 7 /* RightMouseDragged */ => {
+                        let dx = x - center_x;
+                        let dy = y - center_y;
+
+                        if dx != 0 || dy != 0 {
+                            let mut should_switch_back = false;
+                            let mut return_y_ratio = 0.5f32;
+                            let mut return_x_ratio = 0.5f32;
+
+                            if !in_cooldown {
+                                if let Ok(mut rpos) = VIRTUAL_REMOTE_POS.write() {
+                                    let next_x = rpos.0 + dx as f32;
+                                    let next_y = rpos.1 + dy as f32;
+
+                                    match arrangement {
+                                        ScreenArrangement::HostLeftClientRight => {
+                                            if next_x <= 8.0 && dx < 0 {
+                                                should_switch_back = true;
+                                            }
+                                        }
+                                        ScreenArrangement::HostRightClientLeft => {
+                                            if next_x >= rem_w - 8.0 && dx > 0 {
+                                                should_switch_back = true;
+                                            }
+                                        }
+                                        ScreenArrangement::HostTopClientBottom => {
+                                            if next_y <= 8.0 && dy < 0 {
+                                                should_switch_back = true;
+                                            }
+                                        }
+                                        ScreenArrangement::HostBottomClientTop => {
+                                            if next_y >= rem_h - 8.0 && dy > 0 {
+                                                should_switch_back = true;
+                                            }
+                                        }
+                                    }
+
+                                    rpos.0 = next_x.clamp(0.0, rem_w);
+                                    rpos.1 = next_y.clamp(0.0, rem_h);
+                                    return_y_ratio = (rpos.1 / rem_h).clamp(0.0, 1.0);
+                                    return_x_ratio = (rpos.0 / rem_w).clamp(0.0, 1.0);
+                                }
+                            }
+
+                            if should_switch_back {
+                                set_current_active_screen(ActiveScreen::Host);
+
+                                let return_y = (return_y_ratio * screen_h as f32) as i32;
+                                let return_x = (return_x_ratio * screen_w as f32) as i32;
+
+                                unsafe {
+                                    match arrangement {
+                                        ScreenArrangement::HostLeftClientRight => {
+                                            CGWarpMouseCursorPosition(CGPoint { x: (screen_w - 60) as f64, y: return_y as f64 });
+                                        }
+                                        ScreenArrangement::HostRightClientLeft => {
+                                            CGWarpMouseCursorPosition(CGPoint { x: 60.0, y: return_y as f64 });
+                                        }
+                                        ScreenArrangement::HostTopClientBottom => {
+                                            CGWarpMouseCursorPosition(CGPoint { x: return_x as f64, y: (screen_h - 60) as f64 });
+                                        }
+                                        ScreenArrangement::HostBottomClientTop => {
+                                            CGWarpMouseCursorPosition(CGPoint { x: return_x as f64, y: 60.0 });
+                                        }
+                                    }
+                                }
+
+                                let _ = tx.send(NetworkMessage::SwitchScreen(SwitchScreenPayload {
+                                    active_device: "host".to_string(),
+                                    entry_y_ratio: return_y_ratio,
+                                }));
+
+                                if let Ok(ui_guard) = UI_EVENT_TX.lock() {
+                                    if let Some(ui_tx) = &*ui_guard {
+                                        let _ = ui_tx.send("active_screen:host".to_string());
+                                    }
+                                }
+
+                                return std::ptr::null_mut();
+                            }
+
+                            let _ = tx.send(NetworkMessage::MouseMove(MouseMovePayload {
+                                dx,
+                                dy,
+                                abs_x: None,
+                                abs_y: None,
+                            }));
+                            unsafe {
+                                CGWarpMouseCursorPosition(CGPoint { x: center_x as f64, y: center_y as f64 });
+                            }
+                        }
+                        return std::ptr::null_mut();
+                    }
+                    1 /* LeftMouseDown */ => {
+                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 0, state: 1 }));
+                        return std::ptr::null_mut();
+                    }
+                    2 /* LeftMouseUp */ => {
+                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 0, state: 0 }));
+                        return std::ptr::null_mut();
+                    }
+                    3 /* RightMouseDown */ => {
+                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 1, state: 1 }));
+                        return std::ptr::null_mut();
+                    }
+                    4 /* RightMouseUp */ => {
+                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 1, state: 0 }));
+                        return std::ptr::null_mut();
+                    }
+                    25 /* OtherMouseDown */ => {
+                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 2, state: 1 }));
+                        return std::ptr::null_mut();
+                    }
+                    26 /* OtherMouseUp */ => {
+                        let _ = tx.send(NetworkMessage::MouseButton(MouseButtonPayload { button: 2, state: 0 }));
+                        return std::ptr::null_mut();
+                    }
+                    22 /* ScrollWheel */ => {
+                        let dy = unsafe { CGEventGetIntegerValueField(event, 11 /* kCGScrollWheelEventDeltaAxis1 */) } as i32;
+                        let dx = unsafe { CGEventGetIntegerValueField(event, 12 /* kCGScrollWheelEventDeltaAxis2 */) } as i32;
+                        let _ = tx.send(NetworkMessage::MouseWheel(MouseWheelPayload { delta_x: dx, delta_y: dy }));
+                        return std::ptr::null_mut();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if !has_sender {
+            set_current_active_screen(ActiveScreen::Host);
+            return event;
+        }
+
+        std::ptr::null_mut()
+    }
+
+    pub fn run_macos_mouse_loop(is_running: Arc<AtomicBool>) {
+        unsafe {
+            let mask = (1 << 1)
+                | (1 << 2)
+                | (1 << 3)
+                | (1 << 4)
+                | (1 << 5)
+                | (1 << 6)
+                | (1 << 7)
+                | (1 << 22)
+                | (1 << 25)
+                | (1 << 26);
+
+            let tap = CGEventTapCreate(
+                0,
+                0,
+                0,
+                mask,
+                mouse_tap_proc,
+                std::ptr::null_mut(),
+            );
+
+            if tap.is_null() {
+                log::warn!("Failed to create macOS mouse CGEventTap. Ensure Accessibility permissions are granted.");
+                return;
+            }
+
+            let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
+            if source.is_null() {
+                CFRelease(tap);
+                return;
+            }
+
+            let current_rl = CFRunLoopGetCurrent();
+            CFRunLoopAddSource(current_rl, source, kCFRunLoopCommonModes);
+            CGEventTapEnable(tap, true);
+
+            while is_running.load(Ordering::SeqCst) {
+                CFRunLoopRun();
+                break;
+            }
+
+            CFRelease(source);
+            CFRelease(tap);
+        }
     }
 }
