@@ -178,6 +178,7 @@ impl KeyboardMappingEngine {
     /// - Task Manager (Ctrl+Shift+Esc) translates to Mac (Cmd+Opt+Esc Force Quit).
     pub fn translate_key_combination(
         key_code: u32,
+        is_down: bool,
         modifiers: u8,
         source_os: &str,
         target_os: &str,
@@ -199,6 +200,8 @@ impl KeyboardMappingEngine {
             return (key_code, modifiers);
         }
 
+        let mut translated_mods = Self::translate_modifiers(modifiers, source_os, target_os, mode);
+
         let shift = (modifiers & MOD_SHIFT) != 0;
         let ctrl  = (modifiers & MOD_CTRL)  != 0;
         let alt   = (modifiers & MOD_ALT)   != 0;
@@ -207,28 +210,60 @@ impl KeyboardMappingEngine {
         // --- Windows to macOS ---
         if src.contains("win") && tgt.contains("mac") {
             // Standalone modifier keys
+            // Left Ctrl -> Mac Left Command (0x5B)
             if key_code == 0x11 || key_code == 0xA2 {
-                return (0x5B, MOD_META); // Win/Cmd key on Mac
+                if is_down {
+                    translated_mods |= MOD_META;
+                } else {
+                    translated_mods &= !MOD_META;
+                }
+                return (0x5B, translated_mods);
             }
+            // Right Ctrl -> Mac Right Command (0x5C)
             if key_code == 0xA3 {
-                return (0x5C, MOD_META);
+                if is_down {
+                    translated_mods |= MOD_META;
+                } else {
+                    translated_mods &= !MOD_META;
+                }
+                return (0x5C, translated_mods);
             }
+            // Win key -> Mac Control (0x11)
             if key_code == 0x5B || key_code == 0x5C {
-                return (0x11, MOD_CTRL);
+                if is_down {
+                    translated_mods |= MOD_CTRL;
+                } else {
+                    translated_mods &= !MOD_CTRL;
+                }
+                return (0x11, translated_mods);
             }
+            // Alt key -> Mac Option
             if key_code == 0x12 || key_code == 0xA4 || key_code == 0xA5 {
-                return (key_code, MOD_ALT);
+                if is_down {
+                    translated_mods |= MOD_ALT;
+                } else {
+                    translated_mods &= !MOD_ALT;
+                }
+                return (key_code, translated_mods);
+            }
+            // Shift key -> Mac Shift
+            if key_code == 0x10 || key_code == 0xA0 || key_code == 0xA1 {
+                if is_down {
+                    translated_mods |= MOD_SHIFT;
+                } else {
+                    translated_mods &= !MOD_SHIFT;
+                }
+                return (key_code, translated_mods);
             }
 
+            // Shortcuts:
             // 1. Redo: Windows Ctrl + Y -> Mac Cmd + Shift + Z
             if key_code == 0x59 && ctrl && !shift && !alt && !meta {
-                // Key 'Z' is 0x5A, with Command (MOD_META) + Shift (MOD_SHIFT)
                 return (0x5A, MOD_META | MOD_SHIFT);
             }
 
             // 2. App Switcher: Windows Alt + Tab -> Mac Cmd + Tab
             if key_code == 0x09 && alt && !ctrl && !meta {
-                // Tab (0x09) with Command (MOD_META)
                 return (0x09, MOD_META | (if shift { MOD_SHIFT } else { 0 }));
             }
 
@@ -237,7 +272,35 @@ impl KeyboardMappingEngine {
                 return (0x1B, MOD_META | MOD_ALT);
             }
 
-            // 4. Show Desktop: Windows Win + D -> Mac F11 (0x7A)
+            // 4. Close App: Windows Alt + F4 -> Mac Cmd + Q
+            if key_code == 0x73 && alt {
+                return (0x51, MOD_META);
+            }
+
+            // 5. Spotlight Search: Windows Win + Space -> Mac Cmd + Space
+            if key_code == 0x20 && meta {
+                return (0x20, MOD_META);
+            }
+
+            // 6. Delete Previous Word: Windows Ctrl + Backspace -> Mac Option + Delete
+            if key_code == 0x08 && ctrl {
+                return (0x08, MOD_ALT);
+            }
+
+            // 7. Word Left / Right navigation: Windows Ctrl + Left / Right -> Mac Option + Left / Right
+            if (key_code == 0x25 || key_code == 0x27) && ctrl {
+                return (key_code, MOD_ALT | (if shift { MOD_SHIFT } else { 0 }));
+            }
+
+            // 8. Beginning / End of document: Windows Ctrl + Home / End -> Mac Cmd + Up / Down
+            if key_code == 0x24 && ctrl {
+                return (0x26, MOD_META | (if shift { MOD_SHIFT } else { 0 }));
+            }
+            if key_code == 0x23 && ctrl {
+                return (0x28, MOD_META | (if shift { MOD_SHIFT } else { 0 }));
+            }
+
+            // 9. Show Desktop: Windows Win + D -> Mac F11
             if key_code == 0x44 && meta && !ctrl && !alt && !shift {
                 return (0x7A, 0);
             }
@@ -246,31 +309,68 @@ impl KeyboardMappingEngine {
         // --- macOS to Windows ---
         if src.contains("mac") && tgt.contains("win") {
             // Standalone modifier keys
+            // Left Command -> Windows Left Ctrl (0x11 / 0xA2)
             if key_code == 0x5B {
-                return (0x11, MOD_CTRL);
+                if is_down {
+                    translated_mods |= MOD_CTRL;
+                } else {
+                    translated_mods &= !MOD_CTRL;
+                }
+                return (0x11, translated_mods);
             }
+            // Right Command -> Windows Right Ctrl (0xA3)
             if key_code == 0x5C {
-                return (0xA3, MOD_CTRL);
+                if is_down {
+                    translated_mods |= MOD_CTRL;
+                } else {
+                    translated_mods &= !MOD_CTRL;
+                }
+                return (0xA3, translated_mods);
             }
+            // Control -> Windows Left Win (0x5B)
             if key_code == 0x11 || key_code == 0xA2 {
-                return (0x5B, MOD_META);
+                if is_down {
+                    translated_mods |= MOD_META;
+                } else {
+                    translated_mods &= !MOD_META;
+                }
+                return (0x5B, translated_mods);
             }
             if key_code == 0xA3 {
-                return (0x5C, MOD_META);
+                if is_down {
+                    translated_mods |= MOD_META;
+                } else {
+                    translated_mods &= !MOD_META;
+                }
+                return (0x5C, translated_mods);
             }
+            // Option -> Windows Alt (0x12)
             if key_code == 0x12 || key_code == 0xA4 || key_code == 0xA5 {
-                return (key_code, MOD_ALT);
+                if is_down {
+                    translated_mods |= MOD_ALT;
+                } else {
+                    translated_mods &= !MOD_ALT;
+                }
+                return (key_code, translated_mods);
+            }
+            // Shift -> Windows Shift (0x10)
+            if key_code == 0x10 || key_code == 0xA0 || key_code == 0xA1 {
+                if is_down {
+                    translated_mods |= MOD_SHIFT;
+                } else {
+                    translated_mods &= !MOD_SHIFT;
+                }
+                return (key_code, translated_mods);
             }
 
+            // Shortcuts:
             // 1. Redo: Mac Cmd + Shift + Z -> Windows Ctrl + Y
             if key_code == 0x5A && meta && shift && !ctrl && !alt {
-                // Key 'Y' is 0x59 with Ctrl (MOD_CTRL)
                 return (0x59, MOD_CTRL);
             }
 
             // 2. App Switcher: Mac Cmd + Tab -> Windows Alt + Tab
             if key_code == 0x09 && meta && !ctrl && !alt {
-                // Tab with Alt (MOD_ALT)
                 return (0x09, MOD_ALT | (if shift { MOD_SHIFT } else { 0 }));
             }
 
@@ -278,10 +378,23 @@ impl KeyboardMappingEngine {
             if key_code == 0x1B && meta && alt && !ctrl && !shift {
                 return (0x1B, MOD_CTRL | MOD_SHIFT);
             }
+
+            // 4. Quit App: Mac Cmd + Q -> Windows Alt + F4
+            if key_code == 0x51 && meta {
+                return (0x73, MOD_ALT);
+            }
+
+            // 5. Delete Previous Word: Mac Option + Delete -> Windows Ctrl + Backspace
+            if key_code == 0x08 && alt {
+                return (0x08, MOD_CTRL);
+            }
+
+            // 6. Word Left / Right: Mac Option + Left / Right -> Windows Ctrl + Left / Right
+            if (key_code == 0x25 || key_code == 0x27) && alt {
+                return (key_code, MOD_CTRL | (if shift { MOD_SHIFT } else { 0 }));
+            }
         }
 
-        // Default modifier mapping
-        let translated_mods = Self::translate_modifiers(modifiers, source_os, target_os, mode);
         (key_code, translated_mods)
     }
 
@@ -292,11 +405,15 @@ impl KeyboardMappingEngine {
         unsafe {
             use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
                 SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, KEYBDINPUT,
-                VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
             };
             use crate::mouse::simulator::AIRDESK_EXTRA_INFO;
 
-            let keys_to_release = [VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN];
+            let keys_to_release = [
+                0x10, 0xA0, 0xA1, // Shift
+                0x11, 0xA2, 0xA3, // Ctrl
+                0x12, 0xA4, 0xA5, // Alt
+                0x5B, 0x5C,       // Win
+            ];
             for vk in keys_to_release {
                 let mut input = INPUT {
                     r#type: INPUT_KEYBOARD,

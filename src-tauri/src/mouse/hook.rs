@@ -48,6 +48,7 @@ pub fn set_current_active_screen(screen: ActiveScreen) {
         *t = Some(std::time::Instant::now());
     }
     crate::keyboard::set_keyboard_active_screen(screen);
+    crate::keyboard::mapping::KeyboardMappingEngine::release_stuck_keys();
 }
 
 pub fn clear_mouse_hook_sender() {

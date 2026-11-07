@@ -354,6 +354,7 @@ async fn create_connection_pin(
                 }
                 NetworkMessage::Disconnect { reason } => {
                     log::info!("Peer explicitly disconnected: {}. Ending session.", reason);
+                    k_sim.release_all_modifiers();
                     *session_msg.write().await = None;
                     pin_mgr_msg.write().await.disconnect();
                     disc_msg.set_is_host(false).await;
@@ -518,6 +519,7 @@ async fn join_connection(
                     // Client stays in ActiveScreen::Host (local non-capturing) so Client never swallows its own input
                     edge_mon.set_active_screen(ActiveScreen::Host).await;
                     kb_hook.update_active_screen(ActiveScreen::Host);
+                    k_sim.release_all_modifiers();
 
                     if p.active_device == "client" {
                         let entry_x = match p.edge.as_str() {
@@ -537,6 +539,7 @@ async fn join_connection(
                 }
                 NetworkMessage::Disconnect { reason } => {
                     log::info!("Host disconnected: {}. Ending session.", reason);
+                    k_sim.release_all_modifiers();
                     *session_msg.write().await = None;
                     if let Some(mut cl) = client_msg.write().await.take() {
                         cl.disconnect().await;

@@ -307,6 +307,7 @@ impl KeyboardSimulator {
 
         let (translated_vk, _translated_mods) = crate::keyboard::mapping::KeyboardMappingEngine::translate_key_combination(
             vk_code,
+            is_down,
             raw_modifiers,
             source,
             target_os,
@@ -371,24 +372,68 @@ impl KeyboardSimulator {
             if (_translated_mods & crate::keyboard::mapping::MOD_ALT)   != 0 { cg_flags |= 0x00080000; } // Option (⌥)
             if (_translated_mods & crate::keyboard::mapping::MOD_META)  != 0 { cg_flags |= 0x00100000; } // Command (⌘)
 
+            let is_modifier_key = matches!(mac_code, 54..=62);
             let source = CGEventSourceCreate(1 /* kCGEventSourceStateHIDSystemState */);
 
-            if mac_code != 0xFFFF {
+            if is_modifier_key {
+                // Ensure modifier flag state is exact:
+                match mac_code {
+                    54 | 55 => {
+                        if is_down { cg_flags |= 0x00100000; } else { cg_flags &= !0x00100000; }
+                    }
+                    56 | 60 => {
+                        if is_down { cg_flags |= 0x00020000; } else { cg_flags &= !0x00020000; }
+                    }
+                    58 | 61 => {
+                        if is_down { cg_flags |= 0x00080000; } else { cg_flags &= !0x00080000; }
+                    }
+                    59 | 62 => {
+                        if is_down { cg_flags |= 0x00040000; } else { cg_flags &= !0x00040000; }
+                    }
+                    _ => {}
+                }
+
                 let evt = CGEventCreateKeyboardEvent(source, mac_code, is_down);
                 if !evt.is_null() {
                     CGEventSetIntegerValueField(evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
-                    if cg_flags != 0 {
-                        CGEventSetFlags(evt, cg_flags);
-                    }
-                    let is_modifier_key = matches!(mac_code, 54..=62);
-                    if is_modifier_key {
-                        CGEventSetType(evt, 12 /* kCGEventFlagsChanged */);
-                    } else if let Some(ch) = key_char {
-                        let utf16: Vec<u16> = ch.encode_utf16().collect();
-                        if !utf16.is_empty() {
-                            CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
+                    CGEventSetType(evt, 12 /* kCGEventFlagsChanged */);
+                    CGEventSetFlags(evt, cg_flags);
+                    CGEventPost(0 /* kCGHIDEventTap */, evt);
+                    CFRelease(evt);
+                }
+            } else if mac_code != 0xFFFF {
+                let is_shortcut = (cg_flags & (0x00100000 /* Cmd */ | 0x00040000 /* Ctrl */)) != 0;
+                let is_control_key = matches!(
+                    mac_code,
+                    36   // Return
+                    | 48   // Tab
+                    | 51   // Delete / Backspace
+                    | 53   // Escape
+                    | 117  // Forward Delete
+                    | 114  // Insert
+                    | 115  // Home
+                    | 119  // End
+                    | 116  // Page Up
+                    | 121  // Page Down
+                    | 123..=126 // Arrows
+                    | 96..=103 | 109 | 111 | 118 | 120 | 122 // F1-F12
+                );
+
+                let evt = CGEventCreateKeyboardEvent(source, mac_code, is_down);
+                if !evt.is_null() {
+                    CGEventSetIntegerValueField(evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+                    CGEventSetFlags(evt, cg_flags);
+
+                    // Only attach Unicode string if it's text typing (not a shortcut, not a navigation key)
+                    if !is_shortcut && !is_control_key && is_down {
+                        if let Some(ch) = key_char {
+                            let utf16: Vec<u16> = ch.encode_utf16().collect();
+                            if !utf16.is_empty() {
+                                CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
+                            }
                         }
                     }
+
                     CGEventPost(0 /* kCGHIDEventTap */, evt);
                     CFRelease(evt);
                 }
@@ -396,12 +441,12 @@ impl KeyboardSimulator {
                 let evt = CGEventCreateKeyboardEvent(source, 0, is_down);
                 if !evt.is_null() {
                     CGEventSetIntegerValueField(evt, 42 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
-                    if cg_flags != 0 {
-                        CGEventSetFlags(evt, cg_flags);
-                    }
-                    let utf16: Vec<u16> = ch.encode_utf16().collect();
-                    if !utf16.is_empty() {
-                        CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
+                    CGEventSetFlags(evt, cg_flags);
+                    if is_down {
+                        let utf16: Vec<u16> = ch.encode_utf16().collect();
+                        if !utf16.is_empty() {
+                            CGEventKeyboardSetUnicodeString(evt, utf16.len(), utf16.as_ptr());
+                        }
                     }
                     CGEventPost(0 /* kCGHIDEventTap */, evt);
                     CFRelease(evt);

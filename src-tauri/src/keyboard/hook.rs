@@ -89,8 +89,7 @@ fn vk_to_char(vk_code: u32, shift: bool) -> Option<String> {
         (0x6D, _) => "-",
         (0x6E, _) => ".",
         (0x6F, _) => "/",
-        (0x09, _) => "\t",
-        (0x0D, _) => "\n",
+
         _ => {
             let mapped = unsafe { MapVirtualKeyW(vk_code, MAPVK_VK_TO_CHAR) };
             if mapped > 0 && mapped < 0xFFFE {
@@ -231,7 +230,32 @@ impl KeyboardHookManager {
                                             modifiers |= 8;
                                         }
 
-                                        let ch = if is_down { vk_to_char(vk_code, shift_pressed) } else { None };
+                                        // Explicitly sync modifier flags with key events to guarantee no stuck modifiers
+                                        if is_up {
+                                            match vk_code {
+                                                0x10 | 0xA0 | 0xA1 => modifiers &= !1,
+                                                0x11 | 0xA2 | 0xA3 => modifiers &= !2,
+                                                0x12 | 0xA4 | 0xA5 => modifiers &= !4,
+                                                0x5B | 0x5C        => modifiers &= !8,
+                                                _ => {}
+                                            }
+                                        } else {
+                                            match vk_code {
+                                                0x10 | 0xA0 | 0xA1 => modifiers |= 1,
+                                                0x11 | 0xA2 | 0xA3 => modifiers |= 2,
+                                                0x12 | 0xA4 | 0xA5 => modifiers |= 4,
+                                                0x5B | 0x5C        => modifiers |= 8,
+                                                _ => {}
+                                            }
+                                        }
+
+                                        // Attach unicode character ONLY when typing text (not during shortcuts like Ctrl/Cmd+C)
+                                        let is_shortcut = (modifiers & (2 /* Ctrl */ | 8 /* Win */)) != 0;
+                                        let ch = if is_down && !is_shortcut {
+                                            vk_to_char(vk_code, (modifiers & 1) != 0)
+                                        } else {
+                                            None
+                                        };
 
                                         let res = tx.send(NetworkMessage::KeyEvent(KeyEventPayload {
                                             key_code: vk_code,
