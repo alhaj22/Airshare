@@ -1,5 +1,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+pub const AIRDESK_EXTRA_INFO: usize = 0xA12DE5C0;
+#[allow(dead_code)]
+pub const AIRDESK_MAC_MAGIC: i64 = 0x41495244; // 'AIRD'
+
 #[cfg(windows)]
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
@@ -37,6 +41,7 @@ mod macos {
             wheelCount: u32,
             wheel1: i32,
         ) -> *mut c_void;
+        pub fn CGEventSetIntegerValueField(event: *mut c_void, field: u32, value: i64);
         pub fn CGEventPost(tap: u32, event: *mut c_void);
         pub fn CFRelease(cf: *mut c_void);
     }
@@ -71,7 +76,7 @@ impl MouseSimulator {
                         mouseData: 0,
                         dwFlags: MOUSEEVENTF_MOVE,
                         time: 0,
-                        dwExtraInfo: 0,
+                        dwExtraInfo: AIRDESK_EXTRA_INFO,
                     },
                 },
             };
@@ -105,7 +110,7 @@ impl MouseSimulator {
                     mouse_btn,
                 );
                 if !move_evt.is_null() {
-                    CGEventPost(1 /* kCGSessionEventTap */, move_evt);
+                    CGEventSetIntegerValueField(move_evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                     CGEventPost(0 /* kCGHIDEventTap */, move_evt);
                     CFRelease(move_evt);
                 }
@@ -132,7 +137,7 @@ impl MouseSimulator {
                         mouseData: 0,
                         dwFlags: MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE,
                         time: 0,
-                        dwExtraInfo: 0,
+                        dwExtraInfo: AIRDESK_EXTRA_INFO,
                     },
                 },
             };
@@ -157,7 +162,7 @@ impl MouseSimulator {
             let mouse_btn = if self.is_right_down.load(Ordering::SeqCst) { 1 } else { 0 };
             let move_evt = CGEventCreateMouseEvent(std::ptr::null_mut(), mouse_type, pos, mouse_btn);
             if !move_evt.is_null() {
-                CGEventPost(1 /* kCGSessionEventTap */, move_evt);
+                CGEventSetIntegerValueField(move_evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                 CGEventPost(0 /* kCGHIDEventTap */, move_evt);
                 CFRelease(move_evt);
             }
@@ -192,7 +197,7 @@ impl MouseSimulator {
                         mouseData: 0,
                         dwFlags: flags,
                         time: 0,
-                        dwExtraInfo: 0,
+                        dwExtraInfo: AIRDESK_EXTRA_INFO,
                     },
                 },
             };
@@ -223,7 +228,7 @@ impl MouseSimulator {
 
             let evt = CGEventCreateMouseEvent(std::ptr::null_mut(), mouse_type, loc, mouse_btn);
             if !evt.is_null() {
-                CGEventPost(1 /* kCGSessionEventTap */, evt);
+                CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                 CGEventPost(0 /* kCGHIDEventTap */, evt);
                 CFRelease(evt);
             }
@@ -243,7 +248,7 @@ impl MouseSimulator {
                             mouseData: (delta_y * 120) as u32,
                             dwFlags: MOUSEEVENTF_WHEEL,
                             time: 0,
-                            dwExtraInfo: 0,
+                            dwExtraInfo: AIRDESK_EXTRA_INFO,
                         },
                     },
                 };
@@ -260,7 +265,7 @@ impl MouseSimulator {
                             mouseData: (delta_x * 120) as u32,
                             dwFlags: 0x01000, // MOUSEEVENTF_HWHEEL
                             time: 0,
-                            dwExtraInfo: 0,
+                            dwExtraInfo: AIRDESK_EXTRA_INFO,
                         },
                     },
                 };
@@ -279,7 +284,7 @@ impl MouseSimulator {
                     delta_y * 10,
                 );
                 if !evt.is_null() {
-                    CGEventPost(1 /* kCGSessionEventTap */, evt);
+                    CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
                     CGEventPost(0 /* kCGHIDEventTap */, evt);
                     CFRelease(evt);
                 }

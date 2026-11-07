@@ -1,3 +1,7 @@
+pub const AIRDESK_EXTRA_INFO: usize = 0xA12DE5C0;
+#[allow(dead_code)]
+pub const AIRDESK_MAC_MAGIC: i64 = 0x41495244; // 'AIRD'
+
 #[cfg(windows)]
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     MapVirtualKeyW, SendInput, INPUT, INPUT_KEYBOARD, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
@@ -10,7 +14,6 @@ mod macos {
 
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
-        pub fn CGEventSourceCreate(stateID: i32) -> *mut c_void;
         pub fn CGEventCreateKeyboardEvent(
             source: *mut c_void,
             virtualKey: u16,
@@ -23,6 +26,7 @@ mod macos {
             unicodeString: *const u16,
         );
         pub fn CGEventSetFlags(event: *mut c_void, flags: u64);
+        pub fn CGEventSetIntegerValueField(event: *mut c_void, field: u32, value: i64);
         pub fn CGEventPost(tap: u32, event: *mut c_void);
         pub fn CFRelease(cf: *mut c_void);
     }
@@ -147,6 +151,7 @@ mod macos {
     }
 }
 
+#[allow(dead_code)]
 pub fn mac_key_to_win_vk(mac_key: u16) -> u32 {
     match mac_key {
         // Letters A-Z
@@ -276,7 +281,6 @@ impl KeyboardSimulator {
         unsafe {
             if vk_code > 0 {
                 // Determine whether this key requires the KEYEVENTF_EXTENDEDKEY flag on Windows:
-                // Extended keys include arrows, Insert, Delete, Home, End, PageUp, PageDown, Right Ctrl/Alt, Win keys.
                 let is_extended = matches!(
                     vk_code,
                     0x21..=0x28 | 0x2D | 0x2E | 0x5B | 0x5C | 0xA3 | 0xA5
@@ -296,7 +300,7 @@ impl KeyboardSimulator {
                             wScan: scan,
                             dwFlags: flags,
                             time: 0,
-                            dwExtraInfo: 0,
+                            dwExtraInfo: AIRDESK_EXTRA_INFO,
                         },
                     },
                 };
@@ -312,7 +316,7 @@ impl KeyboardSimulator {
                                 wScan: c,
                                 dwFlags: flags,
                                 time: 0,
-                                dwExtraInfo: 0,
+                                dwExtraInfo: AIRDESK_EXTRA_INFO,
                             },
                         },
                     };
@@ -328,14 +332,13 @@ impl KeyboardSimulator {
             let mac_code = win_vk_to_mac_key(vk_code);
             let code_to_use = if mac_code != 0xFFFF { mac_code } else { 0 };
 
-            let source = CGEventSourceCreate(1 /* kCGEventSourceStateCombinedSessionState */);
-            let evt = CGEventCreateKeyboardEvent(source, code_to_use, is_down);
+            // Using NULL source provides standard system event synthesis without needing root!
+            let evt = CGEventCreateKeyboardEvent(std::ptr::null_mut(), code_to_use, is_down);
             if !evt.is_null() {
+                // Tag with AIRDESK signature to avoid re-interception by local tap
+                CGEventSetIntegerValueField(evt, 55 /* kCGEventSourceUserData */, AIRDESK_MAC_MAGIC);
+
                 // Map Windows modifier bitmask to macOS CoreGraphics CGEventFlags:
-                // Bit 0: Shift -> kCGEventFlagMaskShift (0x00020000)
-                // Bit 1: Ctrl  -> kCGEventFlagMaskCommand (0x00100000) [Windows Ctrl translates to Mac Cmd!]
-                // Bit 2: Alt   -> kCGEventFlagMaskAlternate (0x00080000) [Windows Alt translates to Mac Option!]
-                // Bit 3: Win   -> kCGEventFlagMaskControl (0x00040000) [Windows Key translates to Mac Ctrl!]
                 let mut cg_flags: u64 = 0;
                 if (modifiers & 1) != 0 {
                     cg_flags |= 0x00020000; // Shift
@@ -354,7 +357,7 @@ impl KeyboardSimulator {
                     CGEventSetFlags(evt, cg_flags);
                 }
 
-                // On macOS, modifier keys MUST generate kCGEventFlagsChanged (12), not KeyDown/KeyUp!
+                // On macOS, modifier keys MUST generate kCGEventFlagsChanged (12)
                 let is_modifier_key = matches!(mac_code, 54..=62);
                 if is_modifier_key {
                     CGEventSetType(evt, 12 /* kCGEventFlagsChanged */);
@@ -370,13 +373,9 @@ impl KeyboardSimulator {
                     }
                 }
 
-                // Post to session event tap (1) for direct app dispatch and HID tap (0) for system
+                // Post directly to Session Event Tap for active window input delivery
                 CGEventPost(1 /* kCGSessionEventTap */, evt);
-                CGEventPost(0 /* kCGHIDEventTap */, evt);
                 CFRelease(evt);
-            }
-            if !source.is_null() {
-                CFRelease(source);
             }
         }
     }

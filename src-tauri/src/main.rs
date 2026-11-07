@@ -243,29 +243,24 @@ async fn create_connection_pin(
                     clip_watcher.apply_incoming_text(&p.text, p.hash).await;
                 }
                 NetworkMessage::SwitchScreen(p) => {
-                    let target = if p.active_device == "host" {
-                        ActiveScreen::Host
-                    } else {
-                        ActiveScreen::Client
-                    };
-                    edge_mon.set_active_screen(target).await;
-                    kb_hook.update_active_screen(target);
+                    // Incoming SwitchScreen received on Host:
+                    // Host stays in ActiveScreen::Host so Host never swallows its own local input when receiving
+                    edge_mon.set_active_screen(ActiveScreen::Host).await;
+                    kb_hook.update_active_screen(ActiveScreen::Host);
 
-                    if p.active_device == "host" {
-                        let entry_x = match p.edge.as_str() {
-                            "left" => 30,
-                            "right" => (screen_w as i32) - 30,
-                            _ => (p.entry_x_ratio * screen_w as f32) as i32,
-                        }.clamp(10, (screen_w as i32) - 10);
+                    let entry_x = match p.edge.as_str() {
+                        "left" => 50,
+                        "right" => (screen_w as i32) - 50,
+                        _ => (p.entry_x_ratio * screen_w as f32) as i32,
+                    }.clamp(20, (screen_w as i32) - 20);
 
-                        let entry_y = match p.edge.as_str() {
-                            "top" => 30,
-                            "bottom" => (screen_h as i32) - 30,
-                            _ => (p.entry_y_ratio * screen_h as f32) as i32,
-                        }.clamp(10, (screen_h as i32) - 10);
+                    let entry_y = match p.edge.as_str() {
+                        "top" => 50,
+                        "bottom" => (screen_h as i32) - 50,
+                        _ => (p.entry_y_ratio * screen_h as f32) as i32,
+                    }.clamp(20, (screen_h as i32) - 20);
 
-                        m_sim.move_absolute(entry_x, entry_y);
-                    }
+                    m_sim.move_absolute(entry_x, entry_y);
                 }
                 NetworkMessage::MouseMove(p) => {
                     m_sim.move_relative(p.dx, p.dy);
@@ -433,26 +428,23 @@ async fn join_connection(
                     clip_watcher.apply_incoming_text(&p.text, p.hash).await;
                 }
                 NetworkMessage::SwitchScreen(p) => {
-                    let target = if p.active_device == "host" {
-                        ActiveScreen::Host
-                    } else {
-                        ActiveScreen::Client
-                    };
-                    edge_mon.set_active_screen(target).await;
-                    kb_hook.update_active_screen(target);
+                    // Incoming SwitchScreen received on Client:
+                    // Client stays in ActiveScreen::Host (local non-capturing) so Client never swallows its own input
+                    edge_mon.set_active_screen(ActiveScreen::Host).await;
+                    kb_hook.update_active_screen(ActiveScreen::Host);
 
                     if p.active_device == "client" {
                         let entry_x = match p.edge.as_str() {
-                            "left" => 30,
-                            "right" => (screen_w as i32) - 30,
+                            "left" => 50,
+                            "right" => (screen_w as i32) - 50,
                             _ => (p.entry_x_ratio * screen_w as f32) as i32,
-                        }.clamp(10, (screen_w as i32) - 10);
+                        }.clamp(20, (screen_w as i32) - 20);
 
                         let entry_y = match p.edge.as_str() {
-                            "top" => 30,
-                            "bottom" => (screen_h as i32) - 30,
+                            "top" => 50,
+                            "bottom" => (screen_h as i32) - 50,
                             _ => (p.entry_y_ratio * screen_h as f32) as i32,
-                        }.clamp(10, (screen_h as i32) - 10);
+                        }.clamp(20, (screen_h as i32) - 20);
 
                         m_sim.move_absolute(entry_x, entry_y);
                     }
