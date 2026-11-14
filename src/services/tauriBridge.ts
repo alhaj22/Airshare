@@ -12,6 +12,7 @@ import type {
   SystemHardwareMetrics,
   SystemInfo,
 } from '../types';
+import { webP2P } from './webP2P';
 
 // Check if running inside Tauri runtime
 const isTauri =
@@ -47,6 +48,42 @@ const syncChannel =
 
 const sessionStartedListeners = new Set<(session: ActiveSession) => void>();
 const sessionEndedListeners = new Set<() => void>();
+
+// Wire up WebRTC P2P service listeners
+webP2P.onSessionStarted((session) => {
+  mockState.mode = 'connected';
+  mockState.role = session.role;
+  mockState.peerDevice = session.peer_name;
+  mockState.peerOs = session.peer_os as DeviceOS;
+  mockState.peerIp = session.peer_ip;
+  mockState.session = session;
+
+  sessionStartedListeners.forEach((cb) => {
+    try {
+      cb(session);
+    } catch (err) {
+      console.error('[WebP2P] sessionStarted error:', err);
+    }
+  });
+});
+
+webP2P.onSessionEnded(() => {
+  mockState.mode = 'idle';
+  mockState.role = undefined;
+  mockState.pin = undefined;
+  mockState.pinExpires = undefined;
+  mockState.peerDevice = undefined;
+  mockState.peerIp = undefined;
+  mockState.session = undefined;
+
+  sessionEndedListeners.forEach((cb) => {
+    try {
+      cb();
+    } catch (err) {
+      console.error('[WebP2P] sessionEnded error:', err);
+    }
+  });
+});
 
 // Simulated in-memory state for development & browser testing
 let mockMappingMode: MappingMode = 'smart_universal';
@@ -127,6 +164,7 @@ const mockState: {
   peerDevice?: string;
   peerIp?: string;
   peerOs?: DeviceOS;
+  session?: ActiveSession;
   activeScreen: 'host' | 'client';
   arrangement: ScreenArrangementType;
   discoveredDevices: DiscoveredDevice[];
@@ -154,7 +192,7 @@ const mockState: {
   ],
 };
 
-// Wire up Web BroadcastChannel events for real-time multi-tab sync
+// Wire up Web BroadcastChannel events for same-machine tabs
 if (syncChannel) {
   syncChannel.onmessage = (event: MessageEvent<WebSyncPacket>) => {
     const data = event.data;
@@ -184,103 +222,14 @@ if (syncChannel) {
         break;
       }
 
-      case 'CLIENT_JOIN_REQUESTED': {
-        // Someone entered our PIN from another tab/browser window!
-        if (
-          mockState.mode === 'hosting' &&
-          mockState.pin &&
-          (mockState.pin === data.pin || data.pin === 'auto_connect')
-        ) {
-          mockState.mode = 'connected';
-          mockState.role = 'host';
-          mockState.peerDevice = data.clientName || 'MacBook Pro Client';
-          mockState.peerOs = data.clientOs || 'macos';
-          mockState.peerIp = data.clientIp || '192.168.1.45';
-
-          const hostSession: ActiveSession = {
-            session_id: 'web_sess_' + Date.now(),
-            peer_device_id: 'client_' + (data.clientIp || '192.168.1.45'),
-            peer_name: mockState.peerDevice,
-            peer_os: mockState.peerOs,
-            peer_ip: mockState.peerIp,
-            peer_screen_width: 1920,
-            peer_screen_height: 1080,
-            role: 'host',
-            connected_at: Math.floor(Date.now() / 1000),
-          };
-
-          // Notify this Host tab's listeners so UI immediately updates to Connected!
-          sessionStartedListeners.forEach((cb) => {
-            try {
-              cb(hostSession);
-            } catch (err) {
-              console.error('Host session started cb error:', err);
-            }
-          });
-
-          // Send confirmation back to the Client tab
-          syncChannel?.postMessage({
-            type: 'HOST_JOIN_ACCEPTED',
-            senderId: myTabId,
-            pin: data.pin,
-            hostName: 'Windows Laptop (Host)',
-            hostOs: 'windows',
-            hostIp: '192.168.1.102',
-            clientName: mockState.peerDevice,
-            clientOs: mockState.peerOs,
-            clientIp: mockState.peerIp,
-          });
-        }
-        break;
-      }
-
-      case 'HOST_JOIN_ACCEPTED': {
-        // Host has verified our PIN and accepted connection!
-        if (mockState.mode !== 'connected') {
-          mockState.mode = 'connected';
-          mockState.role = 'client';
-          mockState.peerDevice = data.hostName || 'Windows Laptop (Host)';
-          mockState.peerOs = data.hostOs || 'windows';
-          mockState.peerIp = data.hostIp || '192.168.1.102';
-
-          const clientSession: ActiveSession = {
-            session_id: 'web_sess_' + Date.now(),
-            peer_device_id: 'host_' + (data.hostIp || '192.168.1.102'),
-            peer_name: mockState.peerDevice,
-            peer_os: mockState.peerOs,
-            peer_ip: mockState.peerIp,
-            peer_screen_width: 1920,
-            peer_screen_height: 1080,
-            role: 'client',
-            connected_at: Math.floor(Date.now() / 1000),
-          };
-
-          sessionStartedListeners.forEach((cb) => {
-            try {
-              cb(clientSession);
-            } catch (err) {
-              console.error('Client session started cb error:', err);
-            }
-          });
-        }
-        break;
-      }
-
       case 'SESSION_DISCONNECTED': {
+        webP2P.disconnect();
         mockState.mode = 'idle';
         mockState.role = undefined;
         mockState.pin = undefined;
         mockState.pinExpires = undefined;
         mockState.peerDevice = undefined;
         mockState.peerIp = undefined;
-
-        sessionEndedListeners.forEach((cb) => {
-          try {
-            cb();
-          } catch (err) {
-            console.error('Session ended cb error:', err);
-          }
-        });
         break;
       }
 
@@ -311,9 +260,9 @@ export const api = {
 
     const isMac = navigator.userAgent.toLowerCase().includes('mac');
     return {
-      device_name: isMac ? 'MacBook Air M1' : 'Windows Laptop (Host)',
+      device_name: isMac ? 'MacBook Air' : 'Windows Laptop',
       os: isMac ? 'macOS' : 'Windows',
-      local_ip: '192.168.1.102',
+      local_ip: 'WebRTC P2P Direct',
       screen_width: window.screen.width || 1920,
       screen_height: window.screen.height || 1080,
     };
@@ -352,11 +301,15 @@ export const api = {
     mockState.pin = pin;
     mockState.pinExpires = Date.now() + 300 * 1000;
 
+    // Start WebRTC PeerJS hosting across machines
+    await webP2P.startHosting(pin);
+
+    const isWin = navigator.userAgent.toLowerCase().includes('win');
     const hostPayload = {
       pin,
-      hostName: 'Windows Laptop (Host)',
-      hostOs: 'windows' as DeviceOS,
-      hostIp: '192.168.1.102',
+      hostName: isWin ? 'Windows Laptop (Host)' : 'MacBook (Host)',
+      hostOs: (isWin ? 'windows' : 'macos') as DeviceOS,
+      hostIp: 'WebRTC P2P Direct',
       expires: mockState.pinExpires,
     };
 
@@ -375,7 +328,7 @@ export const api = {
     return {
       pin,
       expires_in_seconds: 300,
-      host_ip: '192.168.1.102',
+      host_ip: 'WebRTC P2P Direct',
     };
   },
 
@@ -401,14 +354,13 @@ export const api = {
       }
     }
 
-    // ─── Web Simulation ───
-    // Case 1: Single-tab testing (User clicks host PIN and connects in same tab)
+    // Case 1: Single-tab testing (User enters PIN in same tab)
     if (mockState.mode === 'hosting' && (mockState.pin === cleanPin || cleanPin === 'auto_connect')) {
       mockState.mode = 'connected';
       mockState.role = 'host';
-      mockState.peerDevice = 'MacBook Pro 16″ (Paired)';
+      mockState.peerDevice = 'MacBook Pro Client (Simulated)';
       mockState.peerOs = 'macos';
-      mockState.peerIp = '192.168.1.45';
+      mockState.peerIp = 'WebRTC P2P Direct';
 
       const session: ActiveSession = {
         session_id: 'web_sess_' + Date.now(),
@@ -433,99 +385,66 @@ export const api = {
       return session;
     }
 
-    // Case 2: Multi-tab Web Mode (Check localStorage / broadcast channel)
-    let savedHost: {
-      pin: string;
-      hostName: string;
-      hostOs: DeviceOS;
-      hostIp: string;
-      expires: number;
-    } | null = null;
-
+    // Case 2: Cross-machine WebRTC connection (Windows to Mac across internet or Wi-Fi)
     try {
-      const raw = localStorage.getItem('airdesk_active_host');
-      if (raw) savedHost = JSON.parse(raw);
-    } catch {
-      // ignore
-    }
-
-    const hostFound =
-      savedHost && (savedHost.pin === cleanPin || cleanPin === 'auto_connect')
-        ? savedHost
-        : null;
-
-    if (hostFound) {
-      const clientName = 'Client Device (MacBook)';
-      const clientOs: DeviceOS = 'macos';
-      const clientIp = '192.168.1.45';
-
-      // Send join request to the host tab
-      syncChannel?.postMessage({
-        type: 'CLIENT_JOIN_REQUESTED',
-        senderId: myTabId,
-        pin: cleanPin,
-        clientName,
-        clientOs,
-        clientIp,
-      });
-
+      const session = await webP2P.joinWithPin(cleanPin);
       mockState.mode = 'connected';
       mockState.role = 'client';
-      mockState.peerDevice = hostFound.hostName || 'Windows Laptop (Host)';
-      mockState.peerOs = hostFound.hostOs || 'windows';
-      mockState.peerIp = hostFound.hostIp || '192.168.1.102';
+      mockState.peerDevice = session.peer_name;
+      mockState.peerOs = session.peer_os as DeviceOS;
+      mockState.peerIp = session.peer_ip;
+      return session;
+    } catch (err) {
+      console.warn('[WebP2P] WebRTC connection failed, trying BroadcastChannel fallback:', err);
 
-      const clientSession: ActiveSession = {
-        session_id: 'web_sess_' + Date.now(),
-        peer_device_id: 'host_' + mockState.peerIp,
-        peer_name: mockState.peerDevice,
-        peer_os: mockState.peerOs,
-        peer_ip: mockState.peerIp,
-        peer_screen_width: 1920,
-        peer_screen_height: 1080,
-        role: 'client',
-        connected_at: Math.floor(Date.now() / 1000),
-      };
+      // Check BroadcastChannel / localStorage fallback for same-machine tabs
+      let savedHost: {
+        pin: string;
+        hostName: string;
+        hostOs: DeviceOS;
+        hostIp: string;
+        expires: number;
+      } | null = null;
 
-      sessionStartedListeners.forEach((cb) => {
-        try {
-          cb(clientSession);
-        } catch (e) {
-          console.error(e);
-        }
-      });
-
-      return clientSession;
-    }
-
-    // Case 3: Standalone Web Demo Fallback
-    const demoSession: ActiveSession = {
-      session_id: 'web_sess_' + Date.now(),
-      peer_device_id: 'host_demo',
-      peer_name: 'Windows Laptop (Host)',
-      peer_os: 'windows',
-      peer_ip: hostIp || '192.168.1.102',
-      peer_screen_width: 1920,
-      peer_screen_height: 1080,
-      role: 'client',
-      connected_at: Math.floor(Date.now() / 1000),
-    };
-
-    mockState.mode = 'connected';
-    mockState.role = 'client';
-    mockState.peerDevice = demoSession.peer_name;
-    mockState.peerOs = 'windows';
-    mockState.peerIp = demoSession.peer_ip;
-
-    sessionStartedListeners.forEach((cb) => {
       try {
-        cb(demoSession);
-      } catch (e) {
-        console.error(e);
+        const raw = localStorage.getItem('airdesk_active_host');
+        if (raw) savedHost = JSON.parse(raw);
+      } catch {
+        // ignore
       }
-    });
 
-    return demoSession;
+      if (savedHost && (savedHost.pin === cleanPin || cleanPin === 'auto_connect')) {
+        mockState.mode = 'connected';
+        mockState.role = 'client';
+        mockState.peerDevice = savedHost.hostName;
+        mockState.peerOs = savedHost.hostOs;
+        mockState.peerIp = savedHost.hostIp;
+
+        const clientSession: ActiveSession = {
+          session_id: 'web_sess_' + Date.now(),
+          peer_device_id: 'host_' + mockState.peerIp,
+          peer_name: mockState.peerDevice,
+          peer_os: mockState.peerOs,
+          peer_ip: mockState.peerIp,
+          peer_screen_width: 1920,
+          peer_screen_height: 1080,
+          role: 'client',
+          connected_at: Math.floor(Date.now() / 1000),
+        };
+
+        sessionStartedListeners.forEach((cb) => {
+          try {
+            cb(clientSession);
+          } catch (e) {
+            console.error(e);
+          }
+        });
+
+        return clientSession;
+      }
+
+      throw err;
+    }
   },
 
   async onSessionStarted(callback: (session: ActiveSession) => void): Promise<() => void> {
@@ -592,7 +511,7 @@ export const api = {
               device_id: 'host_active_web',
               device_name: parsed.hostName || 'Host Computer',
               os: parsed.hostOs || 'windows',
-              ip: parsed.hostIp || '192.168.1.102',
+              ip: parsed.hostIp || 'WebRTC P2P Direct',
               port: 42426,
               is_host: true,
               host_pin: parsed.pin,
@@ -636,6 +555,8 @@ export const api = {
         console.warn('Failed to disconnect via Tauri', err);
       }
     }
+
+    webP2P.disconnect();
 
     try {
       localStorage.removeItem('airdesk_active_host');
@@ -681,17 +602,20 @@ export const api = {
       remainingSeconds = diff > 0 ? diff : 0;
     }
 
+    const activeSess = mockState.session || webP2P.getSession() || undefined;
+
     return {
       mode: mockState.mode,
       peer_device: mockState.peerDevice,
       peer_ip: mockState.peerIp,
       peer_os: mockState.peerOs,
-      peer_screen_width: 1920,
-      peer_screen_height: 1080,
+      peer_screen_width: activeSess?.peer_screen_width || 1920,
+      peer_screen_height: activeSess?.peer_screen_height || 1080,
       role: mockState.role,
       active_screen: mockState.activeScreen,
       pin: mockState.pin,
       pin_remaining_seconds: remainingSeconds,
+      session: activeSess,
     };
   },
 
@@ -706,6 +630,8 @@ export const api = {
     }
     const next = mockState.activeScreen === 'host' ? 'client' : 'host';
     mockState.activeScreen = next;
+
+    webP2P.sendFocusSwitch(next);
 
     syncChannel?.postMessage({
       type: 'SCREEN_FOCUS_CHANGED',

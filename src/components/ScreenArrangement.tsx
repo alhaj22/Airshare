@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { ConnectionStatus, DiscoveredDevice, ScreenArrangementType, SystemInfo } from '../types';
 import { OsIcon } from './OsIcon';
+import { webP2P } from '../services/webP2P';
 import {
   Monitor,
   MousePointer2,
@@ -15,6 +16,9 @@ import {
   AlignHorizontalJustifyCenter,
   AlignHorizontalJustifyEnd,
   Sparkles,
+  Command,
+  Info,
+  Radio,
 } from 'lucide-react';
 
 interface ScreenArrangementProps {
@@ -59,6 +63,48 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
   const [isSaved, setIsSaved] = useState(false);
   const [showIdentify, setShowIdentify] = useState(false);
   const [snapGuide, setSnapGuide] = useState<'top' | 'center' | 'bottom' | 'left' | 'right' | null>(null);
+
+  // WebRTC P2P Real-time Remote Input & Cursor streaming states
+  const [remoteCursor, setRemoteCursor] = useState<{ xRatio: number; yRatio: number } | null>(null);
+  const [clickEffect, setClickEffect] = useState<{ xRatio: number; yRatio: number; button: string; id: number } | null>(null);
+  const [recentKeyLogs, setRecentKeyLogs] = useState<Array<{ text: string; time: number }>>([]);
+  const [testInputText, setTestInputText] = useState('');
+  const [packetStats, setPacketStats] = useState<{ sent: number; received: number }>({ sent: 0, received: 0 });
+
+  // Listen for real-time remote input packets over WebRTC
+  useEffect(() => {
+    const unsub = webP2P.onInputMessage((msg) => {
+      setPacketStats((p) => ({ ...p, received: p.received + 1 }));
+
+      if (msg.type === 'INPUT_MOUSE_MOVE' && typeof msg.xRatio === 'number' && typeof msg.yRatio === 'number') {
+        setRemoteCursor({ xRatio: msg.xRatio, yRatio: msg.yRatio });
+      } else if (msg.type === 'INPUT_MOUSE_CLICK') {
+        const x = msg.xRatio ?? remoteCursor?.xRatio ?? 0.5;
+        const y = msg.yRatio ?? remoteCursor?.yRatio ?? 0.5;
+        setClickEffect({ xRatio: x, yRatio: y, button: msg.button || 'left', id: Date.now() });
+        setTimeout(() => setClickEffect(null), 800);
+      } else if (msg.type === 'INPUT_KEY') {
+        const keyDisplay = msg.translatedKey || msg.key || msg.code || 'Key';
+        const mod: string[] = [];
+        if (msg.modifiers?.ctrl) mod.push('Ctrl');
+        if (msg.modifiers?.alt) mod.push('Alt');
+        if (msg.modifiers?.meta) mod.push('⌘');
+        if (msg.modifiers?.shift) mod.push('Shift');
+        const formatted = mod.length > 0 ? `${mod.join('+')}+${keyDisplay}` : keyDisplay;
+
+        setRecentKeyLogs((prev) => [{ text: formatted, time: Date.now() }, ...prev.slice(0, 5)]);
+        if (keyDisplay.length === 1) {
+          setTestInputText((prev) => prev + keyDisplay);
+        } else if (keyDisplay === 'Backspace') {
+          setTestInputText((prev) => prev.slice(0, -1));
+        } else if (keyDisplay === 'Enter') {
+          setTestInputText((prev) => prev + ' ');
+        }
+      }
+    });
+
+    return () => unsub();
+  }, [remoteCursor]);
 
   const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragStartOffset = useRef<{ v: number; h: number }>({ v: 0, h: 0 });
@@ -267,6 +313,41 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
     }
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
+  };
+
+  const handleTouchpadMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const xRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const yRatio = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+    webP2P.sendMouseMove(xRatio, yRatio);
+    setPacketStats((p) => ({ ...p, sent: p.sent + 1 }));
+  };
+
+  const handleTouchpadClick = (button: 'left' | 'right' = 'left') => {
+    webP2P.sendMouseClick(button, 'click');
+    setPacketStats((p) => ({ ...p, sent: p.sent + 1 }));
+  };
+
+  const handleTestKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const isMacPeer = (status.peer_os || '').toLowerCase().includes('mac');
+    let translated = e.key;
+    if (isMacPeer && e.ctrlKey) {
+      translated = `⌘+${e.key}`;
+    }
+
+    webP2P.sendKey(
+      e.key,
+      e.code,
+      {
+        ctrl: e.ctrlKey,
+        alt: e.altKey,
+        shift: e.shiftKey,
+        meta: e.metaKey,
+      },
+      translated
+    );
+    setPacketStats((p) => ({ ...p, sent: p.sent + 1 }));
   };
 
   const edgeGuide = {
@@ -625,6 +706,39 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
                 </>
               )}
             </div>
+
+            {/* Live WebRTC Remote Cursor indicator */}
+            {remoteCursor && (
+              <div
+                className="absolute pointer-events-none z-30 transition-all duration-75 ease-out"
+                style={{
+                  left: `${Math.round(remoteCursor.xRatio * 100)}%`,
+                  top: `${Math.round(remoteCursor.yRatio * 100)}%`,
+                  transform: 'translate(-2px, -2px)',
+                }}
+              >
+                <div className="relative">
+                  <MousePointer2 className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.9)] fill-emerald-500/80" />
+                  <span className="absolute left-3.5 top-3 text-[9px] font-mono font-bold bg-emerald-500/90 text-black px-1.5 py-0.2 rounded shadow-md whitespace-nowrap">
+                    {status.peer_device || 'Remote'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Click ripple animation */}
+            {clickEffect && (
+              <div
+                className="absolute pointer-events-none z-30 animate-ping rounded-full border border-emerald-400 bg-emerald-400/30"
+                style={{
+                  left: `${Math.round(clickEffect.xRatio * 100)}%`,
+                  top: `${Math.round(clickEffect.yRatio * 100)}%`,
+                  width: '24px',
+                  height: '24px',
+                  transform: 'translate(-50%, -50%)',
+                }}
+              />
+            )}
           </div>
         </div>
 
@@ -695,6 +809,158 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
           </button>
         </div>
       </div>
+
+      {/* ─── WebRTC Remote Interaction & Touchpad Deck (Visible when connected) ─── */}
+      {isConnected && (
+        <div className="space-y-3 pt-2 border-t border-white/[0.06]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Left: Virtual Touchpad & Mouse Controller */}
+            <div className="glass-card p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MousePointer2 className="h-3.5 w-3.5 text-emerald-400" />
+                  <h4 className="text-xs font-semibold text-zinc-200">
+                    Live Remote Touchpad
+                  </h4>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400">
+                  <Radio className="h-2.5 w-2.5 text-emerald-400 animate-pulse" />
+                  <span>WebRTC P2P Direct</span>
+                </div>
+              </div>
+
+              {/* Interactive Touch Area */}
+              <div
+                onMouseMove={handleTouchpadMouseMove}
+                onClick={() => handleTouchpadClick('left')}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  handleTouchpadClick('right');
+                }}
+                className="relative h-28 rounded-lg border border-white/[0.08] bg-[#0c0e12] flex flex-col items-center justify-center cursor-crosshair group hover:border-emerald-500/30 transition-colors select-none"
+                style={{
+                  backgroundImage: 'radial-gradient(rgba(255,255,255,0.08) 1px, transparent 1px)',
+                  backgroundSize: '14px 14px',
+                }}
+              >
+                <div className="text-center pointer-events-none space-y-1">
+                  <p className="text-[11px] font-medium text-zinc-400 group-hover:text-zinc-200 transition-colors">
+                    Move mouse or drag finger here
+                  </p>
+                  <p className="text-[10px] font-mono text-zinc-500 group-hover:text-emerald-400/80 transition-colors">
+                    Streams real-time cursor coordinates to {status.peer_device || 'peer'}
+                  </p>
+                </div>
+
+                {/* Quick action click bar at bottom of touchpad */}
+                <div className="absolute bottom-1.5 inset-x-2 flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTouchpadClick('left');
+                    }}
+                    className="flex-1 py-1 rounded bg-white/[0.04] hover:bg-white/[0.08] active:bg-white/[0.15] border border-white/[0.06] text-[10px] font-mono text-zinc-300 transition-all text-center cursor-pointer"
+                  >
+                    Left Click
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTouchpadClick('right');
+                    }}
+                    className="flex-1 py-1 rounded bg-white/[0.04] hover:bg-white/[0.08] active:bg-white/[0.15] border border-white/[0.06] text-[10px] font-mono text-zinc-300 transition-all text-center cursor-pointer"
+                  >
+                    Right Click
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 pt-0.5">
+                <span>Packets Sent: {packetStats.sent}</span>
+                <span>Packets Received: {packetStats.received}</span>
+              </div>
+            </div>
+
+            {/* Right: Real-time Keyboard Stream & Receiver Log */}
+            <div className="glass-card p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Command className="h-3.5 w-3.5 text-zinc-300" />
+                  <h4 className="text-xs font-semibold text-zinc-200">
+                    Real-time Keyboard Stream
+                  </h4>
+                </div>
+                <span className="text-[10px] font-mono text-zinc-500">
+                  Cross-OS KVM Active
+                </span>
+              </div>
+
+              {/* Typing Input Transmitter */}
+              <div>
+                <input
+                  type="text"
+                  placeholder="Click here & type to stream keys (Ctrl+C, Cmd+V, text)..."
+                  onKeyDown={handleTestKeyDown}
+                  className="glass-input !py-2 text-xs w-full font-mono placeholder:text-zinc-600"
+                />
+              </div>
+
+              {/* Live Stream Receiver Feed */}
+              <div className="rounded-lg border border-white/[0.06] bg-[#0c0e12] p-2.5 min-h-[58px]">
+                <div className="text-[10px] font-mono text-zinc-500 mb-1 flex items-center justify-between">
+                  <span>Live Keystrokes Received</span>
+                  {recentKeyLogs.length > 0 && (
+                    <span className="text-emerald-400 font-semibold animate-pulse text-[9px]">● STREAMING</span>
+                  )}
+                </div>
+                {recentKeyLogs.length === 0 ? (
+                  <p className="text-[11px] text-zinc-600 italic">
+                    Waiting for keystrokes from {status.peer_device || 'peer'}...
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    {recentKeyLogs.map((log, i) => (
+                      <span
+                        key={i}
+                        className="kbd-key text-[10px] !bg-emerald-500/10 !border-emerald-500/30 !text-emerald-300"
+                      >
+                        {log.text}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Text Buffer Preview */}
+              {testInputText && (
+                <div className="text-[11px] font-mono text-zinc-300 truncate bg-white/[0.02] px-2 py-1 rounded border border-white/[0.04]">
+                  <span className="text-zinc-500">Buffer: </span>
+                  {testInputText}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Web Mode Informational Callout */}
+          <div className="flex items-start gap-2.5 p-3 rounded-xl border border-blue-500/20 bg-blue-500/[0.04] text-xs">
+            <Info className="h-4 w-4 text-blue-400 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-medium text-zinc-200">
+                Web Mode (WebRTC P2P) Active
+              </p>
+              <p className="text-zinc-400 text-[11px] leading-relaxed">
+                Mouse movements, touch gestures, and keystrokes stream directly between your Windows and Mac browsers via WebRTC DataChannels.
+                To seamlessly control operating system apps outside the browser (Finder, Terminal, VS Code, Notepad) across physical monitor edges, run the native AirDesk desktop client with{' '}
+                <code className="text-blue-300 font-mono px-1 py-0.5 rounded bg-blue-500/10 border border-blue-500/20">
+                  npm run tauri dev
+                </code>.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
