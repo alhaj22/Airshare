@@ -148,6 +148,21 @@ mod macos {
             0xDD => 30, // ]
             0xDE => 39, // '
 
+            // Media Keys
+            0xAD => 0x0007, // Volume Mute
+            0xAE => 0x0001, // Volume Down
+            0xAF => 0x0000, // Volume Up
+            0xB0 => 0x0013, // Next Track
+            0xB1 => 0x0014, // Prev Track
+            0xB2 => 0x0012, // Stop
+            0xB3 => 0x0010, // Play/Pause
+
+            // Special & Lock Keys
+            0x2C => 105, // PrintScreen -> Mac F13
+            0x90 => 71,  // NumLock -> Mac Clear
+            0x91 => 107, // ScrollLock -> Mac F14
+            0x13 => 113, // Pause/Break -> Mac F15
+
             _ => 0xFFFF,
         }
     }
@@ -271,6 +286,12 @@ pub fn mac_key_to_win_vk(mac_key: u16) -> u32 {
         75 => 0x6F, // Num /
         76 => 0x0D, // Num Enter
 
+        // Special & Lock Keys
+        71 => 0x90,  // Clear -> NumLock
+        107 => 0x91, // F14 -> ScrollLock
+        113 => 0x13, // F15 -> Pause/Break
+        105 => 0x2C, // F13 -> PrintScreen
+
         _ => 0,
     }
 }
@@ -319,7 +340,7 @@ impl KeyboardSimulator {
             if translated_vk > 0 {
                 let is_extended = matches!(
                     translated_vk,
-                    0x21..=0x28 | 0x2D | 0x2E | 0x5B | 0x5C | 0xA3 | 0xA5
+                    0x21..=0x28 | 0x2C | 0x2D | 0x2E | 0x5B | 0x5C | 0xA3 | 0xA5 | 0xAD..=0xB3 | 0x90 | 0x91
                 );
                 let scan = MapVirtualKeyW(translated_vk, MAPVK_VK_TO_VSC) as u16;
 

@@ -73,6 +73,7 @@ mod discovery;
 mod keyboard;
 mod mouse;
 mod network;
+mod platform;
 mod security;
 
 use std::collections::HashMap;
@@ -838,6 +839,36 @@ fn release_stuck_keys() -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn get_connected_monitors() -> Vec<platform::MonitorInfo> {
+    platform::get_all_monitors()
+}
+
+#[tauri::command]
+fn set_monitor_brightness(monitor_id: String, brightness: u32) -> Result<(), String> {
+    platform::set_display_brightness(&monitor_id, brightness)
+}
+
+#[tauri::command]
+fn set_monitor_contrast(monitor_id: String, contrast: u32) -> Result<(), String> {
+    platform::set_display_contrast(&monitor_id, contrast)
+}
+
+#[tauri::command]
+fn set_monitor_input_source(monitor_id: String, source_code: u32) -> Result<(), String> {
+    platform::set_display_input_source(&monitor_id, source_code)
+}
+
+#[tauri::command]
+fn get_connected_keyboards() -> Vec<platform::KeyboardDeviceInfo> {
+    platform::get_all_keyboards()
+}
+
+#[tauri::command]
+fn get_hardware_system_info() -> platform::SystemHardwareMetrics {
+    platform::get_hardware_metrics()
+}
+
 fn main() {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
@@ -932,7 +963,13 @@ fn main() {
             set_keyboard_mapping_mode,
             get_custom_modifier_config,
             set_custom_modifier_config,
-            release_stuck_keys
+            release_stuck_keys,
+            get_connected_monitors,
+            set_monitor_brightness,
+            set_monitor_contrast,
+            set_monitor_input_source,
+            get_connected_keyboards,
+            get_hardware_system_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running AirDesk application");
