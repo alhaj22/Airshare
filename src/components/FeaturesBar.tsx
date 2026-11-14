@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mouse, Keyboard, Clipboard, Shuffle, Settings2 } from 'lucide-react';
+import { MousePointer, Keyboard, ClipboardCheck, Shuffle, Sliders } from 'lucide-react';
 
 interface FeaturesBarProps {
   mouseSharing: boolean;
@@ -13,17 +13,6 @@ interface FeaturesBarProps {
   onOpenShortcuts?: () => void;
 }
 
-interface FeatureToggle {
-  icon: React.ReactNode;
-  label: string;
-  desc: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-  color: string;
-  glowColor: string;
-  isShortcut?: boolean;
-}
-
 export const FeaturesBar: React.FC<FeaturesBarProps> = ({
   mouseSharing,
   setMouseSharing,
@@ -35,107 +24,86 @@ export const FeaturesBar: React.FC<FeaturesBarProps> = ({
   setKeyboardMapping,
   onOpenShortcuts,
 }) => {
-  const features: FeatureToggle[] = [
+  const items = [
     {
-      icon: <Mouse className="h-4 w-4" />,
-      label: 'Mouse',
-      desc: 'Pointer, clicks & scroll',
-      value: mouseSharing,
-      onChange: setMouseSharing,
-      color: '#0ea5e9',
-      glowColor: 'rgba(14,165,233,0.15)',
+      id: 'mouse',
+      label: 'Mouse Sharing',
+      sub: 'Smooth sub-pixel pointer & clicks',
+      icon: <MousePointer className="h-4 w-4" />,
+      active: mouseSharing,
+      toggle: () => setMouseSharing(!mouseSharing),
     },
     {
+      id: 'keyboard',
+      label: 'Keyboard Input',
+      sub: 'Low-latency keystroke stream',
       icon: <Keyboard className="h-4 w-4" />,
-      label: 'Keyboard',
-      desc: 'Keystrokes & shortcuts',
-      value: keyboardSharing,
-      onChange: setKeyboardSharing,
-      color: '#a78bfa',
-      glowColor: 'rgba(167,139,250,0.15)',
+      active: keyboardSharing,
+      toggle: () => setKeyboardSharing(!keyboardSharing),
     },
     {
-      icon: <Clipboard className="h-4 w-4" />,
-      label: 'Clipboard',
-      desc: 'Ctrl+C / Cmd+V sync',
-      value: clipboardSharing,
-      onChange: setClipboardSharing,
-      color: '#10b981',
-      glowColor: 'rgba(16,185,129,0.15)',
+      id: 'clipboard',
+      label: 'Clipboard Sync',
+      sub: 'Bidirectional text & rich copy',
+      icon: <ClipboardCheck className="h-4 w-4" />,
+      active: clipboardSharing,
+      toggle: () => setClipboardSharing(!clipboardSharing),
     },
     {
+      id: 'mapping',
+      label: 'Universal Key Remap',
+      sub: 'Auto-translate Win ↔ Mac shortcuts',
       icon: <Shuffle className="h-4 w-4" />,
-      label: 'Key Mapping',
-      desc: 'Cross-platform translate',
-      value: keyboardMapping,
-      onChange: setKeyboardMapping,
-      color: '#f59e0b',
-      glowColor: 'rgba(245,158,11,0.15)',
-      isShortcut: true,
+      active: keyboardMapping,
+      toggle: () => {
+        if (onOpenShortcuts) {
+          onOpenShortcuts();
+        } else {
+          setKeyboardMapping(!keyboardMapping);
+        }
+      },
+      hasConfig: true,
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {features.map((f) => (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+      {items.map((item) => (
         <div
-          key={f.label}
-          onClick={() => {
-            if (f.isShortcut && onOpenShortcuts) {
-              onOpenShortcuts();
-            } else {
-              f.onChange(!f.value);
-            }
-          }}
-          className="flex items-center gap-3 rounded-xl p-3 text-left transition-all duration-150 cursor-pointer select-none w-full relative group"
-          style={{
-            background: f.value ? f.glowColor : 'rgba(255,255,255,0.02)',
-            border: `1px solid ${f.value ? f.color + '44' : 'rgba(255,255,255,0.07)'}`,
-          }}
+          key={item.id}
+          onClick={item.toggle}
+          className={`glass-card p-3 flex items-center justify-between gap-3 cursor-pointer select-none transition-all ${
+            item.active
+              ? 'border-white/[0.12] bg-white/[0.035]'
+              : 'border-white/[0.05] bg-transparent opacity-60 hover:opacity-100'
+          }`}
         >
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-lg flex-shrink-0 transition-colors"
-            style={{
-              background: f.value ? f.color + '22' : 'rgba(255,255,255,0.05)',
-              color: f.value ? f.color : '#475569',
-            }}
-          >
-            {f.icon}
-          </div>
-          <div className="min-w-0">
-            <p
-              className="text-xs font-semibold truncate"
-              style={{ color: f.value ? '#f1f5f9' : '#64748b' }}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-colors ${
+                item.active
+                  ? 'border-white/[0.15] bg-white/[0.08] text-white'
+                  : 'border-white/[0.06] bg-black/30 text-zinc-500'
+              }`}
             >
-              {f.label}
-            </p>
-            <p className="text-[10px] truncate" style={{ color: '#475569' }}>
-              {f.desc}
-            </p>
+              {item.icon}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-zinc-200 tracking-tight truncate">
+                  {item.label}
+                </span>
+                {item.hasConfig && (
+                  <Sliders className="h-3 w-3 text-zinc-500 hover:text-zinc-300" />
+                )}
+              </div>
+              <p className="text-[10px] text-zinc-500 truncate">{item.sub}</p>
+            </div>
           </div>
 
-          {/* Right action / toggle */}
-          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-            {f.isShortcut && onOpenShortcuts && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenShortcuts();
-                }}
-                title="Configure Shortcuts"
-                className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-amber-400 transition-colors"
-              >
-                <Settings2 className="h-3.5 w-3.5" />
-              </button>
-            )}
-            <div
-              className="h-4 w-4 rounded-full border-2 transition-all"
-              style={{
-                background: f.value ? f.color : 'transparent',
-                borderColor: f.value ? f.color : '#334155',
-                boxShadow: f.value ? `0 0 8px ${f.color}66` : 'none',
-              }}
-            />
+          {/* Micro switch */}
+          <div className={`switch-track ${item.active ? 'active' : ''}`}>
+            <span className="switch-thumb" />
           </div>
         </div>
       ))}

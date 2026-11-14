@@ -3,12 +3,19 @@ import { api } from '../services/tauriBridge';
 import type {
   ConnectionStatus,
   DiscoveredDevice,
+  KeyboardDeviceInfo,
+  MonitorInfo,
   ScreenArrangementType,
+  SystemHardwareMetrics,
   SystemInfo,
 } from '../types';
 
 export function useAirDesk() {
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
+  const [keyboards, setKeyboards] = useState<KeyboardDeviceInfo[]>([]);
+  const [hardwareMetrics, setHardwareMetrics] = useState<SystemHardwareMetrics | null>(null);
+
   const [status, setStatus] = useState<ConnectionStatus>({
     mode: 'idle',
     active_screen: 'host',
@@ -51,10 +58,26 @@ export function useAirDesk() {
     []
   );
 
-  // Load system info once
+  const refreshHardware = useCallback(async () => {
+    try {
+      const [mons, kbs, hw] = await Promise.all([
+        api.getConnectedMonitors(),
+        api.getConnectedKeyboards(),
+        api.getHardwareSystemInfo(),
+      ]);
+      setMonitors(mons);
+      setKeyboards(kbs);
+      setHardwareMetrics(hw);
+    } catch (err) {
+      console.warn('Failed to refresh hardware metrics:', err);
+    }
+  }, []);
+
+  // Load system info & hardware on mount
   useEffect(() => {
     api.getSystemInfo().then(setSystemInfo).catch(console.error);
-  }, []);
+    refreshHardware();
+  }, [refreshHardware]);
 
   // Reactive event listeners for session start/end
   useEffect(() => {
@@ -87,10 +110,9 @@ export function useAirDesk() {
 
     api.onSessionEnded(() => {
       setStatus({ mode: 'idle', active_screen: 'host' });
-      autoConnectAttempted.current = false;
       showNotification('Session ended. Input sharing stopped.', 'info');
 
-      // Attempt auto-reconnect if session dropped unexpectedly
+      // Attempt auto-reconnect ONLY if session was previously active and dropped unexpectedly
       if (lastSessionPeer.current?.ip) {
         const targetIp = lastSessionPeer.current.ip;
         showNotification('Connection lost. Reconnecting…', 'info');
@@ -131,28 +153,6 @@ export function useAirDesk() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-connect to discovered host
-  const autoConnectAttempted = useRef(false);
-  useEffect(() => {
-    if (
-      status.mode === 'connected' ||
-      status.mode === 'client' ||
-      autoConnectAttempted.current
-    ) return;
-
-    if (discoveredDevices.length > 0 && status.mode === 'idle') {
-      const hostDev = discoveredDevices.find((d) => d.is_host);
-      if (hostDev) {
-        autoConnectAttempted.current = true;
-        showNotification(`Auto-connecting to ${hostDev.device_name}…`, 'info');
-        joinHost(hostDev.ip, 'auto_connect').catch(() => {
-          autoConnectAttempted.current = false;
-        });
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discoveredDevices, status.mode]);
-
   // ─── Actions ───────────────────────────────────────────────
 
   const startHost = async () => {
@@ -164,7 +164,7 @@ export function useAirDesk() {
         pin: res.pin,
         pin_remaining_seconds: res.expires_in_seconds,
       }));
-      showNotification(`Key generated: ${res.pin}`, 'success');
+      showNotification(`Pairing Key: ${res.pin}`, 'success');
     } catch (err: unknown) {
       showNotification(`Failed to host: ${(err as Error).message}`, 'error');
     }
@@ -253,8 +253,25 @@ export function useAirDesk() {
     showNotification(`Connected with ${device.device_name}!`, 'success');
   };
 
+  const updateMonitorBrightness = async (monitorId: string, brightness: number) => {
+    await api.setMonitorBrightness(monitorId, brightness);
+    setMonitors((prev) =>
+      prev.map((m) => (m.id === monitorId ? { ...m, current_brightness: brightness } : m))
+    );
+  };
+
+  const updateMonitorContrast = async (monitorId: string, contrast: number) => {
+    await api.setMonitorContrast(monitorId, contrast);
+    setMonitors((prev) =>
+      prev.map((m) => (m.id === monitorId ? { ...m, current_contrast: contrast } : m))
+    );
+  };
+
   return {
     systemInfo,
+    monitors,
+    keyboards,
+    hardwareMetrics,
     status,
     discoveredDevices,
     screenArrangement,
@@ -273,6 +290,9 @@ export function useAirDesk() {
     updateArrangement,
     toggleActiveScreen,
     simulatePeerConnection,
+    updateMonitorBrightness,
+    updateMonitorContrast,
+    refreshHardware,
     isTauri: api.isTauriEnvironment(),
   };
 }

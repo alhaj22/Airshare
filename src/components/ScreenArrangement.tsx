@@ -6,7 +6,6 @@ import {
   MousePointer2,
   Move,
   ChevronRight,
-  Info,
   Check,
   Eye,
   AlignVerticalJustifyStart,
@@ -15,6 +14,7 @@ import {
   AlignHorizontalJustifyStart,
   AlignHorizontalJustifyCenter,
   AlignHorizontalJustifyEnd,
+  Sparkles,
 } from 'lucide-react';
 
 interface ScreenArrangementProps {
@@ -65,22 +65,22 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
   const currentArrangementRef = useRef<ScreenArrangementType>(arrangement);
   currentArrangementRef.current = arrangement;
 
-  const hostName = systemInfo?.device_name || 'DESKTOP-H6EVCSJ';
+  const hostName = systemInfo?.device_name || 'Host Computer';
   const hostOs = systemInfo?.os || 'Windows';
   const hostW = systemInfo?.screen_width || 1920;
   const hostH = systemInfo?.screen_height || 1080;
 
-  const clientName = status.peer_device || (isConnected ? "Alhaj's MacBook Air" : 'Remote Display');
+  const clientName = status.peer_device || (isConnected ? 'Remote Device' : 'Client Display');
   const clientOs = status.peer_os || 'macos';
   const clientW = status.peer_screen_width || 1440;
   const clientH = status.peer_screen_height || 900;
 
-  // Proportional sizing matching Windows Display Settings
+  // Proportional sizing matching display dimensions
   const hostAspect = hostW / hostH;
   const clientAspect = clientW / clientH;
 
   const SCREEN_A_W = 180;
-  const SCREEN_A_H = Math.round(SCREEN_A_W / hostAspect); // e.g. 101px for 16:9
+  const SCREEN_A_H = Math.round(SCREEN_A_W / hostAspect);
 
   const SCREEN_B_W = Math.round(180 * (clientW / hostW));
   const SCREEN_B_H = Math.round(SCREEN_B_W / clientAspect);
@@ -166,18 +166,15 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
         rawV = Math.max(minOffset, Math.min(maxOffset, rawV));
 
         // Magnetic snap points
-        // 1. Top align (y = 0)
         if (Math.abs(rawV) < 8) {
           rawV = 0;
           guide = 'top';
         }
-        // 2. Center align
         const centerOffset = Math.round((SCREEN_A_H - SCREEN_B_H) / 2);
         if (Math.abs(rawV - centerOffset) < 8) {
           rawV = centerOffset;
           guide = 'center';
         }
-        // 3. Bottom align
         const bottomOffset = SCREEN_A_H - SCREEN_B_H;
         if (Math.abs(rawV - bottomOffset) < 8) {
           rawV = bottomOffset;
@@ -197,7 +194,6 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
 
         rawH = Math.max(minOffset, Math.min(maxOffset, rawH));
 
-        // Magnetic snap points for horizontal
         if (Math.abs(rawH) < 8) {
           rawH = 0;
           guide = 'left';
@@ -274,36 +270,33 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
   };
 
   const edgeGuide = {
-    host_left_client_right: `Move mouse off the RIGHT edge of "${hostName}" to enter "${clientName}"`,
-    host_right_client_left: `Move mouse off the LEFT edge of "${hostName}" to enter "${clientName}"`,
-    host_top_client_bottom: `Move mouse off the BOTTOM edge of "${hostName}" to enter "${clientName}"`,
-    host_bottom_client_top: `Move mouse off the TOP edge of "${hostName}" to enter "${clientName}"`,
+    host_left_client_right: `Move cursor off the RIGHT boundary of ${hostName} to control ${clientName}`,
+    host_right_client_left: `Move cursor off the LEFT boundary of ${hostName} to control ${clientName}`,
+    host_top_client_bottom: `Move cursor off the BOTTOM boundary of ${hostName} to control ${clientName}`,
+    host_bottom_client_top: `Move cursor off the TOP boundary of ${hostName} to control ${clientName}`,
   }[arrangement];
 
   return (
-    <div className="card p-5 space-y-4">
-      {/* ─── Top Control Header ─── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="glass-panel p-5 space-y-4">
+      {/* ─── Top Control Header (Linear Style) ─── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/[0.07]">
         <div className="flex items-center gap-2.5">
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-lg"
-            style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.25)' }}
-          >
-            <Monitor className="h-4 w-4" style={{ color: '#0ea5e9' }} />
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-zinc-300">
+            <Monitor className="h-3.5 w-3.5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold tracking-tight" style={{ color: '#f1f5f9' }}>
-                Virtual Monitor Arrangement
-              </span>
+              <h3 className="text-xs font-semibold text-zinc-100 tracking-tight">
+                Virtual Display Canvas
+              </h3>
               {isSaved && (
-                <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                  <Check className="h-3 w-3" /> Saved
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.2 rounded">
+                  <Check className="h-2.5 w-2.5" /> Saved
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-slate-400">
-              Drag monitor <strong className="text-yellow-300">B</strong> to position relative to <strong className="text-sky-300">A</strong> (Windows Display Settings)
+            <p className="text-[11px] text-zinc-500">
+              Drag Display B around A to configure seamless mouse edge boundaries
             </p>
           </div>
         </div>
@@ -313,14 +306,14 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
           {/* Identify Button */}
           <button
             onClick={triggerIdentify}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md font-medium text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-all cursor-pointer"
+            className="btn-ghost !py-1 !px-2.5 text-xs"
             title="Identify displays on screen"
           >
-            <Eye className="h-3.5 w-3.5 text-sky-400" />
+            <Eye className="h-3 w-3 text-zinc-400" />
             <span>Identify</span>
           </button>
 
-          <div className="h-4 w-[1px] bg-white/10 mx-1" />
+          <div className="h-3 w-[1px] bg-white/[0.08] mx-1" />
 
           {/* Quick preset positions */}
           <button
@@ -329,10 +322,10 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
               setIsSaved(true);
               setTimeout(() => setIsSaved(false), 2000);
             }}
-            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-medium ${
+            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-mono text-[11px] ${
               arrangement === 'host_left_client_right'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                : 'text-slate-400 hover:text-slate-200 border border-transparent hover:border-white/10'
+                ? 'bg-white/[0.1] text-white border border-white/[0.15]'
+                : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
             }`}
             title="A on Left, B on Right"
           >
@@ -345,10 +338,10 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
               setIsSaved(true);
               setTimeout(() => setIsSaved(false), 2000);
             }}
-            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-medium ${
+            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-mono text-[11px] ${
               arrangement === 'host_right_client_left'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                : 'text-slate-400 hover:text-slate-200 border border-transparent hover:border-white/10'
+                ? 'bg-white/[0.1] text-white border border-white/[0.15]'
+                : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
             }`}
             title="B on Left, A on Right"
           >
@@ -361,10 +354,10 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
               setIsSaved(true);
               setTimeout(() => setIsSaved(false), 2000);
             }}
-            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-medium ${
+            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-mono text-[11px] ${
               arrangement === 'host_top_client_bottom'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                : 'text-slate-400 hover:text-slate-200 border border-transparent hover:border-white/10'
+                ? 'bg-white/[0.1] text-white border border-white/[0.15]'
+                : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
             }`}
             title="A on Top, B on Bottom"
           >
@@ -377,62 +370,62 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
               setIsSaved(true);
               setTimeout(() => setIsSaved(false), 2000);
             }}
-            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-medium ${
+            className={`px-2 py-1 text-xs rounded-md transition-all cursor-pointer font-mono text-[11px] ${
               arrangement === 'host_bottom_client_top'
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                : 'text-slate-400 hover:text-slate-200 border border-transparent hover:border-white/10'
+                ? 'bg-white/[0.1] text-white border border-white/[0.15]'
+                : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
             }`}
             title="B on Top, A on Bottom"
           >
             B ↕ A
           </button>
 
-          <div className="h-4 w-[1px] bg-white/10 mx-1" />
+          <div className="h-3 w-[1px] bg-white/[0.08] mx-1" />
 
           {/* Alignment Buttons */}
           {isHorizontal ? (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <button
                 onClick={() => applyAlignment('top')}
-                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.05] transition-colors"
                 title="Align Top"
               >
                 <AlignVerticalJustifyStart className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => applyAlignment('center')}
-                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.05] transition-colors"
                 title="Align Center"
               >
                 <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => applyAlignment('bottom')}
-                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.05] transition-colors"
                 title="Align Bottom"
               >
                 <AlignVerticalJustifyEnd className="h-3.5 w-3.5" />
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <button
                 onClick={() => applyAlignment('left')}
-                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.05] transition-colors"
                 title="Align Left"
               >
                 <AlignHorizontalJustifyStart className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => applyAlignment('center')}
-                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.05] transition-colors"
                 title="Align Center"
               >
                 <AlignHorizontalJustifyCenter className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => applyAlignment('right')}
-                className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.05] transition-colors"
                 title="Align Right"
               >
                 <AlignHorizontalJustifyEnd className="h-3.5 w-3.5" />
@@ -442,28 +435,28 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
         </div>
       </div>
 
-      {/* ─── Windows Display Settings Canvas ─── */}
+      {/* ─── Ultra-Minimal Obsidian Glass Workspace Canvas ─── */}
       <div
         className="relative rounded-xl overflow-hidden select-none"
         style={{
           width: '100%',
           height: `${CANVAS_H}px`,
-          background: '#0d1117',
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)',
+          background: 'radial-gradient(ellipse at 50% 50%, rgba(20, 24, 33, 0.6) 0%, rgba(9, 10, 14, 0.95) 100%)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          boxShadow: 'inset 0 2px 12px rgba(0,0,0,0.6)',
         }}
       >
-        {/* Subtle dot grid */}
+        {/* Subtle grid crosshairs */}
         <svg
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.18 }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.12 }}
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="2" cy="2" r="1.2" fill="#94a3b8" />
+            <pattern id="canvas-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+              <circle cx="2" cy="2" r="1" fill="#ffffff" />
             </pattern>
           </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
+          <rect width="100%" height="100%" fill="url(#canvas-grid)" />
         </svg>
 
         {/* Magnetic Snap Alignment Guide Line */}
@@ -482,8 +475,6 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
                   ? `${hostPos.y + Math.round(SCREEN_A_H / 2)}px`
                   : snapGuide === 'bottom'
                   ? `${hostPos.y + SCREEN_A_H}px`
-                  : snapGuide === 'center' && !isHorizontal
-                  ? '0px'
                   : '0px',
               width:
                 snapGuide === 'top' || snapGuide === 'center' || snapGuide === 'bottom'
@@ -493,9 +484,8 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
                 snapGuide === 'left' || snapGuide === 'right'
                   ? '100%'
                   : '1px',
-              borderTop: isHorizontal ? '1px dashed #38bdf8' : 'none',
-              borderLeft: !isHorizontal ? '1px dashed #38bdf8' : 'none',
-              opacity: 0.8,
+              borderTop: isHorizontal ? '1px dashed rgba(255,255,255,0.3)' : 'none',
+              borderLeft: !isHorizontal ? '1px dashed rgba(255,255,255,0.3)' : 'none',
             }}
           />
         )}
@@ -512,35 +502,34 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
           }}
         >
           <div
-            className={`w-full h-full rounded shadow-md flex flex-col justify-between p-2.5 transition-all relative ${
+            className={`w-full h-full rounded-xl flex flex-col justify-between p-2.5 transition-all relative select-none ${
               !isClientActive
-                ? 'ring-2 ring-sky-400 ring-offset-2 ring-offset-[#0d1117]'
-                : 'border border-blue-900/60'
+                ? 'border border-blue-400/50 shadow-[0_0_24px_rgba(59,130,246,0.18)] bg-[#111319]/90'
+                : 'border border-white/[0.08] bg-[#0e1015]/80'
             }`}
             style={{
-              background: '#5d7ac9', // Authentic Windows Display Settings blue
-              boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+              backdropFilter: 'blur(16px)',
             }}
           >
             {/* Top row: Label + OS icon */}
-            <div className="flex items-center justify-between text-[10px] font-mono font-bold text-white/90">
-              <span className="flex items-center gap-1.5">
+            <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
+              <span className="flex items-center gap-1.5 font-semibold text-zinc-200">
                 <OsIcon os={hostOs} className="h-3 w-3" />
                 <span>PRIMARY</span>
               </span>
-              <span className="text-[9px] opacity-80">{hostW}×{hostH}</span>
+              <span className="text-[9px] text-zinc-500">{hostW}×{hostH}</span>
             </div>
 
             {/* Center: Large circular "A" badge */}
             <div className="flex items-center justify-center">
               <div
-                className={`flex items-center justify-center rounded-full bg-black text-white font-extrabold shadow-md transition-transform ${
-                  showIdentify ? 'scale-125 ring-4 ring-yellow-400' : 'scale-100'
+                className={`flex items-center justify-center rounded-lg border text-white font-mono font-bold transition-transform ${
+                  showIdentify ? 'scale-125 border-amber-400 bg-amber-400/20 text-amber-200 shadow-lg' : 'border-white/[0.12] bg-white/[0.04]'
                 }`}
                 style={{
-                  width: '38px',
-                  height: '38px',
-                  fontSize: '18px',
+                  width: '32px',
+                  height: '32px',
+                  fontSize: '14px',
                 }}
               >
                 A
@@ -549,15 +538,15 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
 
             {/* Bottom: Device Name */}
             <div className="text-center">
-              <span className="text-[10px] font-semibold text-white/95 truncate block max-w-[160px] mx-auto tracking-tight">
+              <span className="text-[10px] font-medium text-zinc-300 truncate block max-w-[150px] mx-auto">
                 {hostName}
               </span>
             </div>
 
             {/* Active cursor indicator on Host */}
             {!isClientActive && (
-              <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/40 rounded px-1.5 py-0.5 text-[9px] text-sky-200">
-                <MousePointer2 className="h-3 w-3 text-sky-300" />
+              <div className="absolute top-2 right-2 flex items-center gap-1 bg-blue-500/10 border border-blue-500/20 rounded px-1.5 py-0.5 text-[9px] font-mono text-blue-300">
+                <MousePointer2 className="h-2.5 w-2.5" />
                 <span>Active</span>
               </div>
             )}
@@ -579,38 +568,36 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
           onMouseDown={handleMouseDown}
         >
           <div
-            className={`w-full h-full rounded shadow-md flex flex-col justify-between p-2.5 transition-all relative ${
+            className={`w-full h-full rounded-xl flex flex-col justify-between p-2.5 transition-all relative select-none ${
               isClientActive
-                ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-[#0d1117]'
+                ? 'border border-emerald-400/50 shadow-[0_0_24px_rgba(16,185,129,0.22)] bg-[#0d1613]/90'
                 : isDragging
-                ? 'ring-2 ring-yellow-300 shadow-2xl'
-                : 'border border-yellow-800/60'
+                ? 'border border-white/40 shadow-[0_12px_32px_rgba(0,0,0,0.8)] bg-[#171a22]'
+                : 'border border-white/[0.08] bg-[#0e1015]/80 hover:border-white/[0.18]'
             }`}
             style={{
-              background: '#98a306', // Authentic Windows Display Settings olive/yellow-green
-              boxShadow: isDragging ? '0 10px 25px rgba(0,0,0,0.6)' : '0 4px 12px rgba(0,0,0,0.35)',
-              opacity: isConnected ? 1 : 0.8,
+              backdropFilter: 'blur(16px)',
             }}
           >
             {/* Top row: Label + OS icon */}
-            <div className="flex items-center justify-between text-[10px] font-mono font-bold text-white/90">
-              <span className="flex items-center gap-1.5">
+            <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
+              <span className="flex items-center gap-1.5 font-semibold text-zinc-200">
                 <OsIcon os={clientOs} className="h-3 w-3" />
-                <span>{isConnected ? 'REMOTE' : 'CLIENT'}</span>
+                <span>{isConnected ? 'REMOTE' : 'TARGET'}</span>
               </span>
-              <span className="text-[9px] opacity-80">{clientW}×{clientH}</span>
+              <span className="text-[9px] text-zinc-500">{clientW}×{clientH}</span>
             </div>
 
             {/* Center: Large circular "B" badge */}
             <div className="flex items-center justify-center relative">
               <div
-                className={`flex items-center justify-center rounded-full bg-black text-white font-extrabold shadow-md transition-transform ${
-                  showIdentify ? 'scale-125 ring-4 ring-yellow-400' : 'scale-100'
+                className={`flex items-center justify-center rounded-lg border text-white font-mono font-bold transition-transform ${
+                  showIdentify ? 'scale-125 border-amber-400 bg-amber-400/20 text-amber-200 shadow-lg' : 'border-white/[0.12] bg-white/[0.04]'
                 }`}
                 style={{
-                  width: '38px',
-                  height: '38px',
-                  fontSize: '18px',
+                  width: '32px',
+                  height: '32px',
+                  fontSize: '14px',
                 }}
               >
                 B
@@ -619,17 +606,17 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
 
             {/* Bottom: Device Name */}
             <div className="text-center">
-              <span className="text-[10px] font-semibold text-white/95 truncate block max-w-[160px] mx-auto tracking-tight">
+              <span className="text-[10px] font-medium text-zinc-300 truncate block max-w-[150px] mx-auto">
                 {clientName}
               </span>
             </div>
 
             {/* Drag Handle Indicator */}
-            <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/40 rounded px-1.5 py-0.5 text-[9px] text-yellow-200">
+            <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/[0.05] border border-white/[0.08] rounded px-1.5 py-0.5 text-[9px] font-mono text-zinc-400">
               {isClientActive ? (
                 <>
-                  <MousePointer2 className="h-3 w-3 text-emerald-300" />
-                  <span>Active</span>
+                  <MousePointer2 className="h-2.5 w-2.5 text-emerald-300" />
+                  <span className="text-emerald-300">Active</span>
                 </>
               ) : (
                 <>
@@ -641,7 +628,7 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
           </div>
         </div>
 
-        {/* ─── Touching Contact Seam Glowing Highlight ─── */}
+        {/* ─── Touching Contact Seam Glowing Boundary Line ─── */}
         <div
           className="absolute z-10 pointer-events-none"
           style={{
@@ -650,8 +637,6 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
                 ? `${hostPos.x + SCREEN_A_W - 1}px`
                 : arrangement === 'host_right_client_left'
                 ? `${hostPos.x - 1}px`
-                : arrangement === 'host_top_client_bottom'
-                ? `${Math.max(hostPos.x, clientPos.x)}px`
                 : `${Math.max(hostPos.x, clientPos.x)}px`,
             top:
               arrangement === 'host_top_client_bottom'
@@ -660,13 +645,13 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
                 ? `${hostPos.y - 1}px`
                 : `${Math.max(hostPos.y, clientPos.y)}px`,
             width: isHorizontal
-              ? '3px'
+              ? '2px'
               : `${Math.min(hostPos.x + SCREEN_A_W, clientPos.x + SCREEN_B_W) - Math.max(hostPos.x, clientPos.x)}px`,
             height: isHorizontal
               ? `${Math.min(hostPos.y + SCREEN_A_H, clientPos.y + SCREEN_B_H) - Math.max(hostPos.y, clientPos.y)}px`
-              : '3px',
-            background: 'linear-gradient(to right, #38bdf8, #10b981)',
-            boxShadow: '0 0 10px #38bdf8',
+              : '2px',
+            background: 'linear-gradient(to bottom, #3b82f6, #10b981)',
+            boxShadow: '0 0 8px rgba(59, 130, 246, 0.6)',
             borderRadius: '2px',
           }}
         />
@@ -674,25 +659,25 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
 
       {/* ─── Bottom Status & Quick Switch ─── */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <div className="flex items-center gap-2 text-xs" style={{ color: '#94a3b8' }}>
-          <Info className="h-4 w-4 text-sky-400 flex-shrink-0" />
-          <span>{edgeGuide}</span>
+        <div className="flex items-center gap-2 text-xs text-zinc-400">
+          <Sparkles className="h-3.5 w-3.5 text-zinc-400 flex-shrink-0" />
+          <span className="text-[11px]">{edgeGuide}</span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {/* Offset readout */}
-          <div className="text-xs font-mono text-slate-400 bg-slate-900/80 px-2.5 py-1 rounded border border-white/5">
+          <div className="text-[11px] font-mono text-zinc-400 bg-white/[0.03] px-2 py-1 rounded border border-white/[0.08]">
             {isHorizontal ? (
               <span>
-                Vertical offset:{' '}
-                <strong className={vOffsetPx === 0 ? 'text-sky-400' : 'text-yellow-400'}>
+                Offset:{' '}
+                <strong className={vOffsetPx === 0 ? 'text-zinc-200' : 'text-amber-400'}>
                   {vOffsetPx === 0 ? '0px (Aligned)' : `${vOffsetPx > 0 ? `+${vOffsetPx}` : vOffsetPx}px`}
                 </strong>
               </span>
             ) : (
               <span>
-                Horizontal offset:{' '}
-                <strong className={hOffsetPx === 0 ? 'text-sky-400' : 'text-yellow-400'}>
+                Offset:{' '}
+                <strong className={hOffsetPx === 0 ? 'text-zinc-200' : 'text-amber-400'}>
                   {hOffsetPx === 0 ? '0px (Aligned)' : `${hOffsetPx > 0 ? `+${hOffsetPx}` : hOffsetPx}px`}
                 </strong>
               </span>
@@ -702,16 +687,13 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
           {/* Quick toggle screen button */}
           <button
             onClick={onSimulateEdgeCross}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 transition-all cursor-pointer shadow-md"
+            className="btn-action !py-1 text-xs"
+            title="Switch keyboard and mouse focus"
           >
-            <ChevronRight className="h-3.5 w-3.5" />
-            <span>{isClientActive ? 'Return to Host (A)' : 'Switch to Remote (B)'}</span>
+            <span>{isClientActive ? 'Return Focus to Host (A)' : 'Switch Focus to Remote (B)'}</span>
+            <ChevronRight className="h-3 w-3" />
           </button>
         </div>
-      </div>
-
-      <div className="text-[11px] font-mono text-center text-slate-500">
-        Emergency Return Hotkey: <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">Ctrl + Alt + Esc</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">Pause</kbd>
       </div>
     </div>
   );

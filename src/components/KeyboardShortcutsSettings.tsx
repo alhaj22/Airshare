@@ -39,15 +39,15 @@ interface KeyboardShortcutsSettingsProps {
 
 function getCategoryIcon(iconKey: string) {
   switch (iconKey) {
-    case 'zap': return <Zap className="h-3.5 w-3.5" />;
-    case 'layout': return <Layout className="h-3.5 w-3.5" />;
-    case 'folder': return <Folder className="h-3.5 w-3.5" />;
-    case 'camera': return <Camera className="h-3.5 w-3.5" />;
-    case 'globe': return <Globe className="h-3.5 w-3.5" />;
-    case 'type': return <Type className="h-3.5 w-3.5" />;
-    case 'settings': return <Settings className="h-3.5 w-3.5" />;
-    case 'monitor': return <Monitor className="h-3.5 w-3.5" />;
-    default: return <Command className="h-3.5 w-3.5" />;
+    case 'zap': return <Zap className="h-3 w-3" />;
+    case 'layout': return <Layout className="h-3 w-3" />;
+    case 'folder': return <Folder className="h-3 w-3" />;
+    case 'camera': return <Camera className="h-3 w-3" />;
+    case 'globe': return <Globe className="h-3 w-3" />;
+    case 'type': return <Type className="h-3 w-3" />;
+    case 'settings': return <Settings className="h-3 w-3" />;
+    case 'monitor': return <Monitor className="h-3 w-3" />;
+    default: return <Command className="h-3 w-3" />;
   }
 }
 
@@ -57,18 +57,11 @@ function renderKeyBadges(keyStr: string) {
     <div className="flex flex-wrap items-center gap-1">
       {parts.map((p, i) => (
         <React.Fragment key={i}>
-          <kbd
-            className="inline-flex items-center justify-center px-2 py-0.5 text-[11px] font-mono font-semibold rounded shadow-sm select-none"
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              color: '#f8fafc',
-            }}
-          >
+          <kbd className="kbd-key">
             {p}
           </kbd>
           {i < parts.length - 1 && (
-            <span className="text-[10px] text-slate-500 font-mono">+</span>
+            <span className="text-[10px] text-zinc-500 font-mono">+</span>
           )}
         </React.Fragment>
       ))}
@@ -149,425 +142,251 @@ export const KeyboardShortcutsSettings: React.FC<KeyboardShortcutsSettingsProps>
 
   if (!isOpen) return null;
 
-  const targetOsName = (session?.peer_os || (hostOs === 'windows' ? 'macOS' : 'Windows')).toLowerCase();
-  const hostOsName = (systemInfo?.os || (hostOs === 'windows' ? 'Windows' : 'macOS')).toLowerCase();
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
-      style={{
-        background: 'rgba(0,0,0,0.75)',
-        backdropFilter: 'blur(8px)',
-      }}
-    >
-      <div
-        className="relative w-full max-w-5xl rounded-2xl flex flex-col max-h-[92vh] overflow-hidden shadow-2xl border"
-        style={{
-          background: 'rgba(15,20,30,0.98)',
-          borderColor: 'rgba(255,255,255,0.08)',
-          boxShadow: '0 25px 60px -15px rgba(0,0,0,0.7), 0 0 30px rgba(14,165,233,0.1)',
-        }}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md">
+      <div className="relative w-full max-w-5xl rounded-2xl flex flex-col max-h-[92vh] overflow-hidden glass-panel border border-white/[0.12] bg-[#0c0d12]/95 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)]">
         {/* Header */}
-        <div
-          className="flex items-center justify-between px-6 py-4 border-b select-none"
-          style={{
-            borderColor: 'rgba(255,255,255,0.06)',
-            background: 'linear-gradient(180deg, rgba(30,41,59,0.4) 0%, rgba(15,20,30,0.2) 100%)',
-          }}
-        >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] select-none">
           <div className="flex items-center gap-3">
-            <div
-              className="flex h-9 w-9 items-center justify-center rounded-xl"
-              style={{
-                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                boxShadow: '0 4px 14px rgba(245,158,11,0.35)',
-              }}
-            >
-              <Command className="h-5 w-5 text-white" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.05] text-zinc-200">
+              <Command className="h-4 w-4" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-white tracking-tight">
+                <h2 className="text-sm font-semibold text-zinc-100 tracking-tight">
                   Universal Cross-Platform Keyboard Shortcuts
                 </h2>
-                <span
-                  className="text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold"
-                  style={{
-                    background: 'rgba(245,158,11,0.15)',
-                    color: '#fbbf24',
-                    border: '1px solid rgba(245,158,11,0.3)',
-                  }}
-                >
-                  Intelligent KVM
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded border border-white/[0.08] text-zinc-400">
+                  Target OS Translation
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
-                Native translation across Windows, macOS, and Linux with zero missed keystrokes
+              <p className="text-[11px] text-zinc-500">
+                Automatic shortcut mapping between Windows, macOS, and Linux
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="rounded-xl p-2 text-slate-400 hover:text-white transition-all cursor-pointer"
-            style={{ background: 'rgba(255,255,255,0.05)' }}
+            className="rounded-lg p-1.5 text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 custom-scrollbar">
-          {/* OS Pair Banner */}
-          <div
-            className="rounded-xl p-4 border"
-            style={{
-              background: 'linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(99,102,241,0.05) 100%)',
-              borderColor: 'rgba(14,165,233,0.2)',
-            }}
-          >
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-              {/* Host device */}
-              <div className="flex items-center gap-3 w-full sm:w-auto">
-                <div
-                  className="flex h-11 w-11 items-center justify-center rounded-xl text-slate-300 flex-shrink-0"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
-                >
-                  <OsIcon os={systemInfo?.os} className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-400">Source (Host):</span>
-                    <span className="text-xs font-bold text-white truncate max-w-[150px]">
-                      {systemInfo?.device_name || 'This Computer'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                    <span className="px-1.5 py-0.2 rounded font-mono bg-white/5 border border-white/10">
-                      {systemInfo?.os || 'Windows'}
-                    </span>
-                    <span>•</span>
-                    <span className="font-mono text-slate-400">{systemInfo?.architecture || 'x86_64'}</span>
-                    <span>•</span>
-                    <span className="text-slate-400">{systemInfo?.keyboard_layout || 'US QWERTY'}</span>
-                  </div>
-                </div>
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          {/* Translation Direction Ribbon */}
+          <div className="glass-card p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.08] text-zinc-300">
+                <OsIcon os={systemInfo?.os} className="h-4 w-4" />
               </div>
-
-              {/* Translation badge */}
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-700/60 shadow-inner">
-                <span className="text-[11px] font-semibold text-amber-400 flex items-center gap-1.5">
-                  <Sparkles className="h-3 w-3" />
-                  {mappingMode === 'smart_universal'
-                    ? 'Translates to'
-                    : mappingMode === 'raw_passthrough'
-                    ? 'Direct Passthrough'
-                    : 'Custom Mapped'}
+              <div>
+                <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-mono">
+                  Source Keyboard
                 </span>
-                <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+                <p className="text-xs font-medium text-zinc-200">
+                  {systemInfo?.device_name || 'This Computer'} ({systemInfo?.os || 'Windows'})
+                </p>
               </div>
+            </div>
 
-              {/* Peer device */}
-              <div className="flex items-center gap-3 w-full sm:w-auto">
-                <div
-                  className="flex h-11 w-11 items-center justify-center rounded-xl text-slate-300 flex-shrink-0"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
-                >
-                  <OsIcon os={session?.peer_os || (hostOs === 'windows' ? 'macOS' : 'Windows')} className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-400">Target (Peer):</span>
-                    <span className="text-xs font-bold text-white truncate max-w-[150px]">
-                      {session?.peer_name || 'Remote Peer Computer'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                    <span className="px-1.5 py-0.2 rounded font-mono bg-white/5 border border-white/10">
-                      {session?.peer_os || (hostOs === 'windows' ? 'macOS' : 'Windows')}
-                    </span>
-                    <span>•</span>
-                    <span className="font-mono text-slate-400">{session?.peer_architecture || 'Universal'}</span>
-                    <span>•</span>
-                    <span className="text-slate-400">{session?.peer_keyboard_layout || 'Native Layout'}</span>
-                  </div>
-                </div>
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-white/[0.08] bg-white/[0.03] text-zinc-300 text-xs">
+              <Sparkles className="h-3 w-3 text-amber-400" />
+              <span>
+                {mappingMode === 'smart_universal'
+                  ? 'Translates to Native Shortcuts'
+                  : mappingMode === 'raw_passthrough'
+                  ? 'Raw Passthrough'
+                  : 'Custom Modifiers'}
+              </span>
+              <ArrowRight className="h-3 w-3 text-zinc-500" />
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.08] text-zinc-300">
+                <OsIcon os={session?.peer_os || (hostOs === 'windows' ? 'macOS' : 'Windows')} className="h-4 w-4" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-mono">
+                  Target Controlled OS
+                </span>
+                <p className="text-xs font-medium text-zinc-200">
+                  {session?.peer_name || 'Remote Peer'} ({session?.peer_os || (hostOs === 'windows' ? 'macOS' : 'Windows')})
+                </p>
               </div>
             </div>
           </div>
 
           {/* Mode Switcher */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Keyboard Translation Engine Mode
+          <div className="space-y-1.5">
+            <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-mono">
+              Mapping Mode
             </label>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Smart Universal */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
               <button
                 onClick={() => handleModeChange('smart_universal')}
-                className="flex flex-col text-left p-3.5 rounded-xl border transition-all cursor-pointer relative"
-                style={{
-                  background:
-                    mappingMode === 'smart_universal'
-                      ? 'rgba(245,158,11,0.1)'
-                      : 'rgba(255,255,255,0.02)',
-                  borderColor:
-                    mappingMode === 'smart_universal'
-                      ? '#f59e0b'
-                      : 'rgba(255,255,255,0.08)',
-                  boxShadow:
-                    mappingMode === 'smart_universal'
-                      ? '0 0 15px rgba(245,158,11,0.2)'
-                      : 'none',
-                }}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  mappingMode === 'smart_universal'
+                    ? 'border-white/[0.2] bg-white/[0.06] text-white shadow-sm'
+                    : 'border-white/[0.06] bg-transparent text-zinc-400 hover:border-white/[0.12]'
+                }`}
               >
-                <div className="flex items-center justify-between w-full mb-1">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-amber-400" />
-                    <span className="text-xs font-bold text-white">Smart Universal</span>
-                  </div>
-                  <span className="text-[10px] font-semibold text-amber-400 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-zinc-100 flex items-center gap-1.5">
+                    <Sparkles className="h-3 w-3 text-amber-400" /> Smart Universal
+                  </span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded border border-white/[0.1] text-zinc-400">
                     Recommended
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Automatically translates shortcuts to target OS conventions (Windows Ctrl+C → Mac ⌘+C, Alt+Tab → ⌘+Tab, Ctrl+Shift+Esc → Force Quit).
+                <p className="text-[11px] text-zinc-500 leading-relaxed">
+                  Translates modifier keys dynamically: Ctrl+C ↔ ⌘C, Alt+Tab ↔ ⌘Tab, Ctrl+Shift+Esc ↔ ⌘OptEsc.
                 </p>
               </button>
 
-              {/* Raw Passthrough */}
               <button
                 onClick={() => handleModeChange('raw_passthrough')}
-                className="flex flex-col text-left p-3.5 rounded-xl border transition-all cursor-pointer"
-                style={{
-                  background:
-                    mappingMode === 'raw_passthrough'
-                      ? 'rgba(14,165,233,0.1)'
-                      : 'rgba(255,255,255,0.02)',
-                  borderColor:
-                    mappingMode === 'raw_passthrough'
-                      ? '#0ea5e9'
-                      : 'rgba(255,255,255,0.08)',
-                  boxShadow:
-                    mappingMode === 'raw_passthrough'
-                      ? '0 0 15px rgba(14,165,233,0.2)'
-                      : 'none',
-                }}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  mappingMode === 'raw_passthrough'
+                    ? 'border-white/[0.2] bg-white/[0.06] text-white shadow-sm'
+                    : 'border-white/[0.06] bg-transparent text-zinc-400 hover:border-white/[0.12]'
+                }`}
               >
-                <div className="flex items-center gap-2 mb-1">
-                  <Zap className="h-4 w-4 text-sky-400" />
-                  <span className="text-xs font-bold text-white">Raw 1:1 Passthrough</span>
+                <div className="flex items-center gap-1.5 mb-1 text-xs font-medium text-zinc-100">
+                  <Zap className="h-3 w-3 text-blue-400" /> Raw 1:1 Passthrough
                 </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Sends raw physical keys without mapping. Use when both computers have identical OS or when running virtual machines.
+                <p className="text-[11px] text-zinc-500 leading-relaxed">
+                  Sends raw unmapped scan codes. Best for identical operating systems or remote desktop VM clients.
                 </p>
               </button>
 
-              {/* Custom Overrides */}
               <button
                 onClick={() => handleModeChange('custom')}
-                className="flex flex-col text-left p-3.5 rounded-xl border transition-all cursor-pointer"
-                style={{
-                  background:
-                    mappingMode === 'custom'
-                      ? 'rgba(167,139,250,0.1)'
-                      : 'rgba(255,255,255,0.02)',
-                  borderColor:
-                    mappingMode === 'custom'
-                      ? '#a78bfa'
-                      : 'rgba(255,255,255,0.08)',
-                  boxShadow:
-                    mappingMode === 'custom'
-                      ? '0 0 15px rgba(167,139,250,0.2)'
-                      : 'none',
-                }}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  mappingMode === 'custom'
+                    ? 'border-white/[0.2] bg-white/[0.06] text-white shadow-sm'
+                    : 'border-white/[0.06] bg-transparent text-zinc-400 hover:border-white/[0.12]'
+                }`}
               >
-                <div className="flex items-center gap-2 mb-1">
-                  <Sliders className="h-4 w-4 text-purple-400" />
-                  <span className="text-xs font-bold text-white">Custom Overrides</span>
+                <div className="flex items-center gap-1.5 mb-1 text-xs font-medium text-zinc-100">
+                  <Sliders className="h-3 w-3 text-purple-400" /> Custom Modifiers
                 </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Configure specific modifier key behaviors such as swapping Ctrl/Alt, Command/Option, or remap CapsLock.
+                <p className="text-[11px] text-zinc-500 leading-relaxed">
+                  Allows manually swapping Control, Option, Command, Alt, or using CapsLock as Control.
                 </p>
               </button>
             </div>
           </div>
 
-          {/* Custom Overrides Toggles */}
+          {/* Custom Modifiers Toggle Box */}
           {mappingMode === 'custom' && (
-            <div
-              className="p-4 rounded-xl border space-y-3 slide-down"
-              style={{
-                background: 'rgba(167,139,250,0.05)',
-                borderColor: 'rgba(167,139,250,0.2)',
-              }}
-            >
-              <h3 className="text-xs font-bold text-white flex items-center gap-2">
-                <Sliders className="h-3.5 w-3.5 text-purple-400" />
-                Custom Modifier Key Mappings
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  onClick={() => handleToggleCustom('swap_ctrl_alt')}
-                  className="flex items-center justify-between p-2.5 rounded-lg border text-xs font-medium cursor-pointer transition-all"
-                  style={{
-                    background: customConfig.swap_ctrl_alt ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.03)',
-                    borderColor: customConfig.swap_ctrl_alt ? '#a78bfa' : 'rgba(255,255,255,0.1)',
-                    color: customConfig.swap_ctrl_alt ? '#f1f5f9' : '#94a3b8',
-                  }}
-                >
-                  <span>Swap Ctrl ↔ Alt</span>
-                  <div
-                    className="h-3.5 w-3.5 rounded-full border"
-                    style={{
-                      background: customConfig.swap_ctrl_alt ? '#a78bfa' : 'transparent',
-                      borderColor: customConfig.swap_ctrl_alt ? '#a78bfa' : '#475569',
-                    }}
-                  />
-                </button>
+            <div className="glass-card p-3 border-purple-500/20 bg-purple-500/[0.03] grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <button
+                onClick={() => handleToggleCustom('swap_ctrl_alt')}
+                className={`p-2 rounded-lg border text-xs flex items-center justify-between transition-all ${
+                  customConfig.swap_ctrl_alt
+                    ? 'border-purple-500/40 bg-purple-500/15 text-purple-200'
+                    : 'border-white/[0.08] text-zinc-400'
+                }`}
+              >
+                <span>Swap Ctrl ↔ Alt</span>
+                <span className="font-mono text-[10px]">{customConfig.swap_ctrl_alt ? 'ON' : 'OFF'}</span>
+              </button>
 
-                <button
-                  onClick={() => handleToggleCustom('swap_cmd_alt')}
-                  className="flex items-center justify-between p-2.5 rounded-lg border text-xs font-medium cursor-pointer transition-all"
-                  style={{
-                    background: customConfig.swap_cmd_alt ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.03)',
-                    borderColor: customConfig.swap_cmd_alt ? '#a78bfa' : 'rgba(255,255,255,0.1)',
-                    color: customConfig.swap_cmd_alt ? '#f1f5f9' : '#94a3b8',
-                  }}
-                >
-                  <span>Swap Cmd ↔ Option (Alt)</span>
-                  <div
-                    className="h-3.5 w-3.5 rounded-full border"
-                    style={{
-                      background: customConfig.swap_cmd_alt ? '#a78bfa' : 'transparent',
-                      borderColor: customConfig.swap_cmd_alt ? '#a78bfa' : '#475569',
-                    }}
-                  />
-                </button>
+              <button
+                onClick={() => handleToggleCustom('swap_cmd_alt')}
+                className={`p-2 rounded-lg border text-xs flex items-center justify-between transition-all ${
+                  customConfig.swap_cmd_alt
+                    ? 'border-purple-500/40 bg-purple-500/15 text-purple-200'
+                    : 'border-white/[0.08] text-zinc-400'
+                }`}
+              >
+                <span>Swap Cmd ↔ Option (Alt)</span>
+                <span className="font-mono text-[10px]">{customConfig.swap_cmd_alt ? 'ON' : 'OFF'}</span>
+              </button>
 
-                <button
-                  onClick={() => handleToggleCustom('capslock_as_ctrl')}
-                  className="flex items-center justify-between p-2.5 rounded-lg border text-xs font-medium cursor-pointer transition-all"
-                  style={{
-                    background: customConfig.capslock_as_ctrl ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.03)',
-                    borderColor: customConfig.capslock_as_ctrl ? '#a78bfa' : 'rgba(255,255,255,0.1)',
-                    color: customConfig.capslock_as_ctrl ? '#f1f5f9' : '#94a3b8',
-                  }}
-                >
-                  <span>CapsLock as Control</span>
-                  <div
-                    className="h-3.5 w-3.5 rounded-full border"
-                    style={{
-                      background: customConfig.capslock_as_ctrl ? '#a78bfa' : 'transparent',
-                      borderColor: customConfig.capslock_as_ctrl ? '#a78bfa' : '#475569',
-                    }}
-                  />
-                </button>
-              </div>
+              <button
+                onClick={() => handleToggleCustom('capslock_as_ctrl')}
+                className={`p-2 rounded-lg border text-xs flex items-center justify-between transition-all ${
+                  customConfig.capslock_as_ctrl
+                    ? 'border-purple-500/40 bg-purple-500/15 text-purple-200'
+                    : 'border-white/[0.08] text-zinc-400'
+                }`}
+              >
+                <span>CapsLock as Control</span>
+                <span className="font-mono text-[10px]">{customConfig.capslock_as_ctrl ? 'ON' : 'OFF'}</span>
+              </button>
             </div>
           )}
 
-          {/* Emergency Stuck Keys Rescue Bar */}
-          <div
-            className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-xl border"
-            style={{
-              background: 'rgba(239,68,68,0.06)',
-              borderColor: 'rgba(239,68,68,0.2)',
-            }}
-          >
-            <div className="flex items-center gap-2.5 text-xs text-slate-300">
-              <ShieldAlert className="h-4 w-4 text-red-400 flex-shrink-0" />
+          {/* Emergency Stuck Keys Rescue */}
+          <div className="glass-card p-3 flex flex-col sm:flex-row items-center justify-between gap-3 border-red-500/20 bg-red-500/[0.02]">
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <ShieldAlert className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />
               <span>
-                Accidental stuck Shift/Ctrl/Alt keys? Tap{' '}
-                <kbd className="px-1.5 py-0.5 rounded font-mono text-[10px] bg-white/10 border border-white/20 text-white">
-                  Esc 3 times
-                </kbd>{' '}
-                or use the un-stuck button:
+                Stuck modifier keys? Press <kbd className="kbd-key">Esc</kbd> 3× or use:
               </span>
             </div>
 
             <button
               onClick={handleReleaseStuckKeys}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none"
-              style={{
-                background: stuckReleased ? '#10b981' : 'rgba(239,68,68,0.15)',
-                color: stuckReleased ? '#ffffff' : '#fca5a5',
-                border: `1px solid ${stuckReleased ? '#10b981' : 'rgba(239,68,68,0.3)'}`,
-              }}
+              className="btn-danger !py-1 text-xs"
             >
               {stuckReleased ? (
                 <>
-                  <Check className="h-3.5 w-3.5" />
-                  <span>Modifiers Released!</span>
+                  <Check className="h-3 w-3 text-emerald-400" />
+                  <span>Keys Released!</span>
                 </>
               ) : (
                 <>
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span>Release Stuck Keys Now</span>
+                  <RotateCcw className="h-3 w-3" />
+                  <span>Release Stuck Keys</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Search & Category Tabs */}
-          <div className="space-y-3 pt-2">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              {/* Search input */}
-              <div
-                className="relative flex-1 flex items-center rounded-xl px-3 py-2 border"
-                style={{
-                  background: 'rgba(255,255,255,0.03)',
-                  borderColor: 'rgba(255,255,255,0.1)',
-                }}
-              >
-                <Search className="h-4 w-4 text-slate-400 mr-2 flex-shrink-0" />
+          {/* Search & Categories */}
+          <div className="space-y-2.5 pt-1">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+              <div className="relative flex-1">
+                <Search className="h-3.5 w-3.5 text-zinc-500 absolute left-3 top-2.5" />
                 <input
                   type="text"
-                  placeholder="Search 60+ shortcuts by action, key combination..."
+                  placeholder="Search 60+ shortcuts (e.g. copy, paste, desktop, switch, lock)..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none w-full"
+                  className="glass-input !pl-8"
                 />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="text-slate-400 hover:text-white text-xs px-1"
-                  >
-                    Clear
-                  </button>
-                )}
               </div>
-
-              {/* Match count */}
-              <div className="text-xs text-slate-400 font-mono self-center sm:self-auto">
-                {filteredShortcuts.length} shortcuts found
-              </div>
+              <span className="text-xs font-mono text-zinc-500 self-center">
+                {filteredShortcuts.length} matching
+              </span>
             </div>
 
-            {/* Category Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+            {/* Category Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
               <button
                 onClick={() => setSelectedCategory('all')}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all cursor-pointer"
-                style={{
-                  background: selectedCategory === 'all' ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.03)',
-                  color: selectedCategory === 'all' ? '#fbbf24' : '#94a3b8',
-                  border: `1px solid ${selectedCategory === 'all' ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.06)'}`,
-                }}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-all ${
+                  selectedCategory === 'all'
+                    ? 'bg-white/[0.1] text-white border border-white/[0.15]'
+                    : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
+                }`}
               >
-                All Categories
+                All (60+)
               </button>
               {SHORTCUT_CATEGORIES.map((cat) => (
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all cursor-pointer"
-                  style={{
-                    background: selectedCategory === cat.id ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.03)',
-                    color: selectedCategory === cat.id ? '#fbbf24' : '#94a3b8',
-                    border: `1px solid ${selectedCategory === cat.id ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.06)'}`,
-                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-all ${
+                    selectedCategory === cat.id
+                      ? 'bg-white/[0.1] text-white border border-white/[0.15]'
+                      : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
+                  }`}
                 >
                   {getCategoryIcon(cat.icon)}
                   <span>{cat.label}</span>
@@ -576,127 +395,44 @@ export const KeyboardShortcutsSettings: React.FC<KeyboardShortcutsSettingsProps>
             </div>
           </div>
 
-          {/* Comparison Table */}
-          <div
-            className="rounded-xl border overflow-hidden"
-            style={{
-              borderColor: 'rgba(255,255,255,0.08)',
-              background: 'rgba(10,14,22,0.6)',
-            }}
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr
-                    className="text-[11px] uppercase tracking-wider font-semibold border-b"
-                    style={{
-                      background: 'rgba(255,255,255,0.03)',
-                      borderColor: 'rgba(255,255,255,0.08)',
-                      color: '#94a3b8',
-                    }}
-                  >
-                    <th className="py-3 px-4 w-[28%]">Shortcut Action</th>
-                    <th className="py-3 px-4 w-[24%]">
-                      <div className="flex items-center gap-1.5">
-                        <OsIcon os="windows" className="h-3.5 w-3.5 text-slate-300" />
-                        <span>Windows</span>
+          {/* Table */}
+          <div className="glass-panel overflow-hidden border border-white/[0.08]">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-white/[0.08] bg-white/[0.02] text-[10px] font-mono uppercase text-zinc-500">
+                  <th className="py-2.5 px-4 w-[28%] font-semibold">Action</th>
+                  <th className="py-2.5 px-4 w-[24%] font-semibold">Windows</th>
+                  <th className="py-2.5 px-4 w-[24%] font-semibold">macOS</th>
+                  <th className="py-2.5 px-4 w-[24%] font-semibold">Linux</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {filteredShortcuts.map((s) => (
+                  <tr key={s.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-2.5 px-4">
+                      <div className="font-medium text-zinc-200">{s.name}</div>
+                      <div className="text-[10px] text-zinc-500 truncate max-w-[200px]">
+                        {s.description}
                       </div>
-                    </th>
-                    <th className="py-3 px-4 w-[24%]">
-                      <div className="flex items-center gap-1.5">
-                        <OsIcon os="mac" className="h-3.5 w-3.5 text-slate-300" />
-                        <span>macOS</span>
-                      </div>
-                    </th>
-                    <th className="py-3 px-4 w-[24%]">
-                      <div className="flex items-center gap-1.5">
-                        <OsIcon os="linux" className="h-3.5 w-3.5 text-slate-300" />
-                        <span>Linux</span>
-                      </div>
-                    </th>
+                    </td>
+                    <td className="py-2.5 px-4">{renderKeyBadges(s.windows)}</td>
+                    <td className="py-2.5 px-4">{renderKeyBadges(s.macos)}</td>
+                    <td className="py-2.5 px-4">{renderKeyBadges(s.linux)}</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 text-xs">
-                  {filteredShortcuts.map((s) => (
-                    <tr
-                      key={s.id}
-                      className="hover:bg-white/[0.02] transition-colors group"
-                    >
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-white group-hover:text-amber-300 transition-colors">
-                          {s.name}
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
-                          {s.description}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div
-                          className={`p-1 rounded ${
-                            hostOsName.includes('win')
-                              ? 'bg-sky-500/10 border border-sky-500/20'
-                              : ''
-                          }`}
-                        >
-                          {renderKeyBadges(s.windows)}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div
-                          className={`p-1 rounded ${
-                            targetOsName.includes('mac') || hostOsName.includes('mac')
-                              ? 'bg-amber-500/10 border border-amber-500/20'
-                              : ''
-                          }`}
-                        >
-                          {renderKeyBadges(s.macos)}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div
-                          className={`p-1 rounded ${
-                            targetOsName.includes('linux') || hostOsName.includes('linux')
-                              ? 'bg-emerald-500/10 border border-emerald-500/20'
-                              : ''
-                          }`}
-                        >
-                          {renderKeyBadges(s.linux)}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredShortcuts.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="py-10 text-center text-slate-500">
-                        No shortcuts match your search query. Try another term.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {/* Modal Footer */}
-        <div
-          className="flex items-center justify-between px-6 py-3 border-t select-none"
-          style={{
-            borderColor: 'rgba(255,255,255,0.06)',
-            background: 'rgba(10,13,20,0.8)',
-          }}
-        >
-          <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            <span>
-              Real-time hardware injection active. Modifier states sync automatically.
-            </span>
+        {/* Footer */}
+        <div className="flex items-center justify-between px-6 py-3 border-t border-white/[0.08] select-none bg-black/40">
+          <div className="text-[11px] text-zinc-500 flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            <span>Target OS translations applied dynamically with zero delay</span>
           </div>
 
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-semibold bg-white text-slate-900 hover:bg-slate-100 transition-all cursor-pointer shadow-lg"
-          >
+          <button onClick={onClose} className="btn-action !py-1 text-xs">
             Done
           </button>
         </div>

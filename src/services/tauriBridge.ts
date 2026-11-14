@@ -5,8 +5,11 @@ import type {
   DeviceOS,
   DiscoveredDevice,
   HostPinResponse,
+  KeyboardDeviceInfo,
   MappingMode,
+  MonitorInfo,
   ScreenArrangementType,
+  SystemHardwareMetrics,
   SystemInfo,
 } from '../types';
 
@@ -25,6 +28,68 @@ let mockCustomConfig: CustomModifierConfig = {
   enabled: true,
 };
 
+let mockMonitors: MonitorInfo[] = [
+  {
+    id: '\\\\.\\DISPLAY1',
+    name: 'Dell UltraSharp U2723QE (Primary)',
+    is_primary: true,
+    x: 0,
+    y: 0,
+    width: 3840,
+    height: 2160,
+    refresh_rate: 60,
+    scale_factor: 1.5,
+    orientation: 'landscape',
+    manufacturer: 'Dell Inc.',
+    model: 'U2723QE 4K IPS Black',
+    serial_number: 'CN-08K75P-74261',
+    ddc_ci_supported: true,
+    current_brightness: 72,
+    current_contrast: 50,
+  },
+  {
+    id: '\\\\.\\DISPLAY2',
+    name: 'Built-in Display / Secondary',
+    is_primary: false,
+    x: 3840,
+    y: 0,
+    width: 1920,
+    height: 1080,
+    refresh_rate: 144,
+    scale_factor: 1.0,
+    orientation: 'landscape',
+    manufacturer: 'Lenovo',
+    model: 'ColorMaster FHD IPS',
+    serial_number: 'LEN-88294-FHD',
+    ddc_ci_supported: true,
+    current_brightness: 80,
+    current_contrast: 55,
+  },
+];
+
+let mockKeyboards: KeyboardDeviceInfo[] = [
+  {
+    device_id: 'kb_apple_magic_bt',
+    name: 'Apple Magic Keyboard with Touch ID',
+    vendor_id: 0x004c,
+    product_id: 0x029c,
+    is_mac_keyboard: true,
+    layout_type: 'ANSI',
+    connection_type: 'Bluetooth',
+    active_language_layout: 'US (QWERTY)',
+  },
+  {
+    device_id: 'kb_internal_laptop',
+    name: 'ThinkPad UltraNav Keyboard',
+    vendor_id: 0x17ef,
+    product_id: 0x6047,
+    is_mac_keyboard: false,
+    layout_type: 'ANSI',
+    connection_type: 'Internal',
+    active_language_layout: 'US (QWERTY)',
+  },
+];
+
 const mockState: {
   mode: 'idle' | 'hosting' | 'client' | 'connected';
   pin?: string;
@@ -41,20 +106,28 @@ const mockState: {
   arrangement: 'host_left_client_right',
   discoveredDevices: [
     {
-      device_id: 'dev_macbook_m1',
-      device_name: 'MacBook Air M1 (Ali)',
+      device_id: 'dev_macbook_pro',
+      device_name: 'MacBook Pro 16″ (M3 Max)',
       os: 'macos',
       ip: '192.168.1.45',
       port: 42426,
       is_host: false,
     },
     {
-      device_id: 'dev_thinkpad_x1',
-      device_name: 'ThinkPad-X1-Windows',
-      os: 'windows',
-      ip: '192.168.1.78',
+      device_id: 'dev_ubuntu_box',
+      device_name: 'Ubuntu Dev Workstation (24.04)',
+      os: 'linux',
+      ip: '192.168.1.89',
       port: 42426,
-      is_host: true,
+      is_host: false,
+    },
+    {
+      device_id: 'dev_thinkpad_win',
+      device_name: 'ThinkPad X1 Yoga (Windows 11)',
+      os: 'windows',
+      ip: '192.168.1.105',
+      port: 42426,
+      is_host: false,
     },
   ],
 };
@@ -368,5 +441,98 @@ export const api = {
         console.warn('Failed to release stuck keys:', err);
       }
     }
+  },
+
+  async getConnectedMonitors(): Promise<MonitorInfo[]> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<MonitorInfo[]>('get_connected_monitors');
+      } catch (err) {
+        console.warn('Failed to get connected monitors via Tauri:', err);
+      }
+    }
+    return mockMonitors;
+  },
+
+  async setMonitorBrightness(monitorId: string, brightness: number): Promise<void> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_monitor_brightness', { monitorId, brightness });
+        return;
+      } catch (err) {
+        console.warn('Failed to set monitor brightness via Tauri:', err);
+      }
+    }
+    const target = mockMonitors.find((m) => m.id === monitorId);
+    if (target) {
+      target.current_brightness = brightness;
+    }
+  },
+
+  async setMonitorContrast(monitorId: string, contrast: number): Promise<void> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_monitor_contrast', { monitorId, contrast });
+        return;
+      } catch (err) {
+        console.warn('Failed to set monitor contrast via Tauri:', err);
+      }
+    }
+    const target = mockMonitors.find((m) => m.id === monitorId);
+    if (target) {
+      target.current_contrast = contrast;
+    }
+  },
+
+  async setMonitorInputSource(monitorId: string, inputSource: number): Promise<void> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_monitor_input_source', { monitorId, inputSource });
+      } catch (err) {
+        console.warn('Failed to set monitor input source via Tauri:', err);
+      }
+    }
+  },
+
+  async getConnectedKeyboards(): Promise<KeyboardDeviceInfo[]> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<KeyboardDeviceInfo[]>('get_connected_keyboards');
+      } catch (err) {
+        console.warn('Failed to get connected keyboards via Tauri:', err);
+      }
+    }
+    return mockKeyboards;
+  },
+
+  async getHardwareSystemInfo(): Promise<SystemHardwareMetrics> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<SystemHardwareMetrics>('get_hardware_system_info');
+      } catch (err) {
+        console.warn('Failed to get hardware system info via Tauri:', err);
+      }
+    }
+
+    const isMac = navigator.userAgent.toLowerCase().includes('mac');
+    return {
+      cpu_name: isMac ? 'Apple M3 Pro (12 Cores)' : 'Intel Core i7-13700H (14 Cores / 20 Threads)',
+      cpu_cores: isMac ? 12 : 14,
+      total_ram_mb: 32768,
+      available_ram_mb: 19456,
+      gpu_name: isMac ? 'Apple 18-Core GPU' : 'NVIDIA GeForce RTX 4070 Laptop GPU (8GB)',
+      battery_percentage: 92,
+      is_charging: true,
+      os_name: isMac ? 'macOS' : 'Windows',
+      os_version: isMac ? 'macOS 15.1 Sequoia' : 'Windows 11 Pro 23H2 (Build 22631)',
+      architecture: isMac ? 'aarch64' : 'x86_64',
+      display_server: undefined,
+    };
   },
 };

@@ -1,42 +1,15 @@
 import React from 'react';
-import { Zap, Monitor, Wifi, ChevronDown, Command } from 'lucide-react';
+import { Command, MousePointer } from 'lucide-react';
 import type { ConnectionStatus, SystemInfo } from '../types';
-import { OsIcon } from './OsIcon';
 
 interface HeaderProps {
   systemInfo: SystemInfo | null;
   status: ConnectionStatus;
   onToggleActiveScreen: () => void;
   onOpenShortcuts?: () => void;
-}
-
-function getStatusInfo(status: ConnectionStatus) {
-  switch (status.mode) {
-    case 'connected':
-      return {
-        dot: '#10b981',
-        label: 'Connected',
-        pulse: true,
-      };
-    case 'hosting':
-      return {
-        dot: '#f59e0b',
-        label: 'Waiting for client...',
-        pulse: true,
-      };
-    case 'client':
-      return {
-        dot: '#0ea5e9',
-        label: 'Joining...',
-        pulse: true,
-      };
-    default:
-      return {
-        dot: '#334155',
-        label: 'Not connected',
-        pulse: false,
-      };
-  }
+  activeTab?: string;
+  onSelectTab?: (tab: 'canvas' | 'pairing' | 'hardware' | 'shortcuts') => void;
+  onDisconnect?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -44,130 +17,141 @@ export const Header: React.FC<HeaderProps> = ({
   status,
   onToggleActiveScreen,
   onOpenShortcuts,
+  activeTab = 'canvas',
+  onSelectTab,
+  onDisconnect,
 }) => {
-  const { dot, label, pulse } = getStatusInfo(status);
   const isConnected = status.mode === 'connected';
+  const isHosting = status.mode === 'hosting';
+  const isRemoteActive = status.active_screen === 'client';
 
   return (
-    <header
-      className="flex items-center justify-between px-5 py-3 select-none"
-      style={{
-        background: '#0f1319',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-      }}
-    >
-      {/* Left: Brand */}
-      <div className="flex items-center gap-3">
-        <div
-          className="flex h-7 w-7 items-center justify-center rounded-lg border border-sky-500/30"
-          style={{
-            background: '#0284c7',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
-          }}
-        >
-          <Zap className="h-4 w-4 text-white" strokeWidth={2.5} />
+    <header className="sticky top-0 z-50 w-full border-b border-white/[0.07] bg-[#08090a]/80 backdrop-blur-xl select-none">
+      <div className="max-w-6xl mx-auto px-4 h-13 flex items-center justify-between gap-4">
+        {/* Left: Brand Monogram & Title */}
+        <div className="flex items-center gap-3">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.05] border border-white/[0.1] shadow-inner text-white font-mono font-bold text-xs tracking-wider">
+            AD
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sm tracking-tight text-zinc-100">
+              AirDesk
+            </span>
+            <span className="hidden sm:inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded border border-white/[0.08] bg-white/[0.03] text-zinc-400">
+              v0.1.0 • KVM
+            </span>
+          </div>
         </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-bold text-slate-100 tracking-tight">
-            AirDesk
-          </span>
-          <span
-            className="text-[10px] font-mono rounded px-1.5 py-0.5 border"
-            style={{
-              background: 'rgba(14,165,233,0.1)',
-              color: '#38bdf8',
-              borderColor: 'rgba(14,165,233,0.25)',
-            }}
-          >
-            KVM
-          </span>
-        </div>
-      </div>
 
-      {/* Center: Status */}
-      <div className="flex items-center gap-2">
-        <div
-          className="h-2 w-2 rounded-full"
-          style={{
-            background: dot,
-            boxShadow: pulse ? `0 0 6px ${dot}` : 'none',
-          }}
-        />
-        <span className="text-xs text-slate-400">{label}</span>
+        {/* Center: Segmented Navigation (Linear Style) */}
+        {onSelectTab && (
+          <nav className="hidden md:flex items-center p-0.5 rounded-lg border border-white/[0.06] bg-black/40 backdrop-blur-md">
+            <button
+              onClick={() => onSelectTab('canvas')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                activeTab === 'canvas'
+                  ? 'bg-white/[0.1] text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Virtual Canvas
+            </button>
+            <button
+              onClick={() => onSelectTab('pairing')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                activeTab === 'pairing'
+                  ? 'bg-white/[0.1] text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Session & PIN
+            </button>
+            <button
+              onClick={() => onSelectTab('hardware')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                activeTab === 'hardware'
+                  ? 'bg-white/[0.1] text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Hardware & DDC
+            </button>
+            <button
+              onClick={() => onSelectTab('shortcuts')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                activeTab === 'shortcuts'
+                  ? 'bg-white/[0.1] text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Shortcuts (60+)
+            </button>
+          </nav>
+        )}
 
-        {isConnected && (
-          <>
-            <span className="text-slate-700">•</span>
+        {/* Right: Status Pill & Actions */}
+        <div className="flex items-center gap-2.5">
+          {/* Connection Status Pill */}
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-full border border-white/[0.08] bg-white/[0.02]">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                isConnected
+                  ? 'bg-emerald-400 animate-pulse'
+                  : isHosting
+                  ? 'bg-amber-400 animate-pulse'
+                  : 'bg-zinc-500'
+              }`}
+            />
+            <span className="text-xs text-zinc-300 font-medium">
+              {isConnected
+                ? status.peer_device || 'Peer Connected'
+                : isHosting
+                ? `Hosting (PIN: ${status.pin || '...'}`
+                : systemInfo?.local_ip || 'Ready'}
+            </span>
+          </div>
+
+          {/* Screen Focus Toggle (When Connected) */}
+          {isConnected && (
             <button
               onClick={onToggleActiveScreen}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer"
-              style={{
-                background: status.active_screen === 'client'
-                  ? 'rgba(16,185,129,0.12)'
-                  : 'rgba(14,165,233,0.12)',
-                color: status.active_screen === 'client' ? '#6ee7b7' : '#7dd3fc',
-                border: `1px solid ${status.active_screen === 'client' ? 'rgba(16,185,129,0.25)' : 'rgba(14,165,233,0.25)'}`,
-              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-all ${
+                isRemoteActive
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 shadow-sm'
+                  : 'border-white/[0.1] bg-white/[0.04] text-zinc-300 hover:text-white'
+              }`}
+              title="Toggle input control between local and remote screen"
             >
-              <Monitor className="h-3 w-3" />
-              <span>
-                {status.active_screen === 'client'
-                  ? `Remote: ${status.peer_device || 'Remote'}`
-                  : 'Local: This Computer'}
-              </span>
-              <ChevronDown className="h-3 w-3" />
+              <MousePointer className="h-3 w-3" />
+              <span>{isRemoteActive ? 'Remote Focus' : 'Local Focus'}</span>
+              <kbd className="kbd-key ml-0.5">Tab</kbd>
             </button>
-          </>
-        )}
-      </div>
+          )}
 
-      {/* Right: Shortcuts and Device info */}
-      <div className="flex items-center gap-2">
-        {onOpenShortcuts && (
-          <button
-            onClick={onOpenShortcuts}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer select-none"
-            style={{
-              background: 'rgba(245,158,11,0.12)',
-              color: '#fbbf24',
-              border: '1px solid rgba(245,158,11,0.25)',
-            }}
-            title="Universal Cross-Platform Keyboard Shortcuts"
-          >
-            <Command className="h-3 w-3" />
-            <span className="hidden sm:inline">Shortcuts</span>
-          </button>
-        )}
+          {/* Shortcuts Quick Palette Button */}
+          {onOpenShortcuts && (
+            <button
+              onClick={onOpenShortcuts}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:text-zinc-200 hover:border-white/[0.15] text-xs transition-colors"
+              title="Open Universal Shortcuts Palette"
+            >
+              <Command className="h-3 w-3" />
+              <span className="hidden lg:inline text-[11px]">Shortcuts</span>
+              <kbd className="kbd-key hidden sm:inline">⌘K</kbd>
+            </button>
+          )}
 
-        {systemInfo?.local_ip && (
-          <div
-            className="hidden sm:flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs border"
-            style={{
-              background: 'rgba(255,255,255,0.03)',
-              borderColor: 'rgba(255,255,255,0.08)',
-              color: '#94a3b8',
-            }}
-          >
-            <Wifi className="h-3 w-3" />
-            <span className="font-mono">{systemInfo.local_ip}</span>
-          </div>
-        )}
-        {systemInfo && (
-          <div
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs border"
-            style={{
-              background: 'rgba(255,255,255,0.03)',
-              borderColor: 'rgba(255,255,255,0.08)',
-              color: '#94a3b8',
-            }}
-          >
-            <OsIcon os={systemInfo.os} className="h-3 w-3 text-slate-300" />
-            <span className="max-w-[120px] truncate">{systemInfo.device_name}</span>
-          </div>
-        )}
+          {/* Disconnect quick button if connected */}
+          {isConnected && onDisconnect && (
+            <button
+              onClick={onDisconnect}
+              className="btn-danger text-xs !py-1 !px-2"
+              title="Disconnect active session"
+            >
+              Disconnect
+            </button>
+          )}
+        </div>
       </div>
     </header>
   );

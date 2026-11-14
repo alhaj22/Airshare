@@ -111,3 +111,48 @@ export interface AppSettings {
   keyboardMapping: boolean;
   hotkey: string;
 }
+
+export interface MonitorInfo {
+  id: string;
+  name: string;
+  is_primary: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  refresh_rate: number;
+  scale_factor: number;
+  orientation: string;
+  manufacturer: string;
+  model: string;
+  serial_number: string;
+  ddc_ci_supported: boolean;
+  current_brightness?: number;
+  current_contrast?: number;
+}
+
+export interface KeyboardDeviceInfo {
+  device_id: string;
+  name: string;
+  vendor_id: number;
+  product_id: number;
+  is_mac_keyboard: boolean;
+  layout_type: string;
+  connection_type: string;
+  active_language_layout: string;
+}
+
+export interface SystemHardwareMetrics {
+  cpu_name: string;
+  cpu_cores: number;
+  total_ram_mb: number;
+  available_ram_mb: number;
+  gpu_name: string;
+  battery_percentage?: number;
+  is_charging?: boolean;
+  os_name: string;
+  os_version: string;
+  architecture: string;
+  display_server?: string;
+}
+

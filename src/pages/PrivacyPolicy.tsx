@@ -7,17 +7,18 @@ interface PrivacyPolicyProps {
 
 export const PrivacyPolicy: React.FC<PrivacyPolicyProps> = ({ onBack }) => {
   return (
-    <div className="min-h-screen bg-[#0a0d12] text-slate-200 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-3xl mx-auto">
+    <div className="min-h-screen bg-[#08090a] text-zinc-300 py-12 px-4 sm:px-6 lg:px-8 relative">
+      <div className="ambient-background" />
+      <div className="max-w-3xl mx-auto relative z-10">
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors mb-8 cursor-pointer"
+          className="btn-ghost mb-8 text-xs !py-1.5"
         >
-          <ArrowLeft className="h-4 w-4" />
-          Back to AirDesk
+          <ArrowLeft className="h-3.5 w-3.5" />
+          <span>Back to AirDesk</span>
         </button>
 
-        <div className="border border-white/10 rounded-xl bg-[#0f1319] p-8 sm:p-10 shadow-xl">
+        <div className="glass-panel p-8 sm:p-10 border border-white/[0.08]">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20">
               <Shield className="h-6 w-6" />
