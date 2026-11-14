@@ -10,9 +10,17 @@ import {
   ArrowRight,
   Check,
   Command,
+  Layout,
+  Folder,
+  Camera,
+  Globe,
+  Type,
+  Settings,
+  Monitor,
 } from 'lucide-react';
 import { api } from '../services/tauriBridge';
 import { SHORTCUT_CATEGORIES, SHORTCUT_REGISTRY } from '../services/shortcutRegistry';
+import { OsIcon } from './OsIcon';
 import type {
   ActiveSession,
   CustomModifierConfig,
@@ -29,12 +37,18 @@ interface KeyboardShortcutsSettingsProps {
   session?: ActiveSession;
 }
 
-function getOsIcon(os?: string) {
-  const o = (os || '').toLowerCase();
-  if (o.includes('mac')) return '🍎';
-  if (o.includes('win')) return '🪟';
-  if (o.includes('linux')) return '🐧';
-  return '💻';
+function getCategoryIcon(iconKey: string) {
+  switch (iconKey) {
+    case 'zap': return <Zap className="h-3.5 w-3.5" />;
+    case 'layout': return <Layout className="h-3.5 w-3.5" />;
+    case 'folder': return <Folder className="h-3.5 w-3.5" />;
+    case 'camera': return <Camera className="h-3.5 w-3.5" />;
+    case 'globe': return <Globe className="h-3.5 w-3.5" />;
+    case 'type': return <Type className="h-3.5 w-3.5" />;
+    case 'settings': return <Settings className="h-3.5 w-3.5" />;
+    case 'monitor': return <Monitor className="h-3.5 w-3.5" />;
+    default: return <Command className="h-3.5 w-3.5" />;
+  }
 }
 
 function renderKeyBadges(keyStr: string) {
@@ -217,10 +231,10 @@ export const KeyboardShortcutsSettings: React.FC<KeyboardShortcutsSettingsProps>
               {/* Host device */}
               <div className="flex items-center gap-3 w-full sm:w-auto">
                 <div
-                  className="flex h-11 w-11 items-center justify-center rounded-xl text-2xl flex-shrink-0"
-                  style={{ background: 'rgba(255,255,255,0.05)' }}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl text-slate-300 flex-shrink-0"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
                 >
-                  {getOsIcon(systemInfo?.os)}
+                  <OsIcon os={systemInfo?.os} className="h-5 w-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -257,10 +271,10 @@ export const KeyboardShortcutsSettings: React.FC<KeyboardShortcutsSettingsProps>
               {/* Peer device */}
               <div className="flex items-center gap-3 w-full sm:w-auto">
                 <div
-                  className="flex h-11 w-11 items-center justify-center rounded-xl text-2xl flex-shrink-0"
-                  style={{ background: 'rgba(255,255,255,0.05)' }}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl text-slate-300 flex-shrink-0"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
                 >
-                  {getOsIcon(session?.peer_os || (hostOs === 'windows' ? 'macOS' : 'Windows'))}
+                  <OsIcon os={session?.peer_os || (hostOs === 'windows' ? 'macOS' : 'Windows')} className="h-5 w-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -555,7 +569,7 @@ export const KeyboardShortcutsSettings: React.FC<KeyboardShortcutsSettingsProps>
                     border: `1px solid ${selectedCategory === cat.id ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.06)'}`,
                   }}
                 >
-                  <span>{cat.icon}</span>
+                  {getCategoryIcon(cat.icon)}
                   <span>{cat.label}</span>
                 </button>
               ))}
@@ -584,19 +598,19 @@ export const KeyboardShortcutsSettings: React.FC<KeyboardShortcutsSettingsProps>
                     <th className="py-3 px-4 w-[28%]">Shortcut Action</th>
                     <th className="py-3 px-4 w-[24%]">
                       <div className="flex items-center gap-1.5">
-                        <span>🪟</span>
+                        <OsIcon os="windows" className="h-3.5 w-3.5 text-slate-300" />
                         <span>Windows</span>
                       </div>
                     </th>
                     <th className="py-3 px-4 w-[24%]">
                       <div className="flex items-center gap-1.5">
-                        <span>🍎</span>
+                        <OsIcon os="mac" className="h-3.5 w-3.5 text-slate-300" />
                         <span>macOS</span>
                       </div>
                     </th>
                     <th className="py-3 px-4 w-[24%]">
                       <div className="flex items-center gap-1.5">
-                        <span>🐧</span>
+                        <OsIcon os="linux" className="h-3.5 w-3.5 text-slate-300" />
                         <span>Linux</span>
                       </div>
                     </th>

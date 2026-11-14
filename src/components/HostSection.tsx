@@ -5,7 +5,7 @@ import type { ConnectionStatus } from '../types';
 interface HostSectionProps {
   status: ConnectionStatus;
   onStartHost: () => void;
-  onDisconnect: () => void;
+  onDisconnect?: () => void;
 }
 
 export const HostSection: React.FC<HostSectionProps> = ({ status, onStartHost, onDisconnect }) => {
@@ -82,7 +82,7 @@ export const HostSection: React.FC<HostSectionProps> = ({ status, onStartHost, o
             </button>
           </div>
         ) : isHosting ? (
-          /* Hosting — PIN display */
+          /* Hosting: PIN display */
           <div className="flex flex-col gap-5">
             {/* PIN Digits */}
             <div>
@@ -113,7 +113,7 @@ export const HostSection: React.FC<HostSectionProps> = ({ status, onStartHost, o
                   className="h-full rounded-full transition-all duration-1000 ease-linear"
                   style={{
                     width: `${progressPercent}%`,
-                    background: 'linear-gradient(90deg, #0ea5e9, #f59e0b)',
+                    background: '#0284c7',
                   }}
                 />
               </div>
@@ -134,8 +134,8 @@ export const HostSection: React.FC<HostSectionProps> = ({ status, onStartHost, o
               </button>
             </div>
 
-            <div className="text-xs text-center" style={{ color: '#475569' }}>
-              👉 Enter this key on the other computer to connect
+            <div className="text-xs text-center text-slate-400">
+              Enter this 6-digit key on the remote device to authorize pairing.
             </div>
           </div>
         ) : (

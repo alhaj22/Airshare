@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Apple, Shield, ExternalLink, CheckCircle } from 'lucide-react';
+import { X, Apple, Shield, ExternalLink, CheckCircle, AlertTriangle } from 'lucide-react';
 import { api } from '../services/tauriBridge';
 
 interface MacPermissionsModalProps {
@@ -82,8 +82,9 @@ export const MacPermissionsModal: React.FC<MacPermissionsModalProps> = ({ isOpen
         </div>
 
         {/* Important Alert */}
-        <div className="rounded-lg p-3 mb-4 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-300 leading-relaxed">
-          ⚠️ <strong>Required for clicks & typing:</strong> macOS blocks all simulated mouse clicks and keyboard keystrokes until Accessibility permission is granted in System Settings.
+        <div className="flex items-start gap-2.5 rounded-lg p-3 mb-4 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-300 leading-relaxed">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5 text-amber-400" />
+          <span><strong>Required for clicks and typing:</strong> macOS requires Accessibility permission in System Settings before allowing synthetic pointer events and keystroke delivery.</span>
         </div>
 
         {/* Steps */}
@@ -119,7 +120,7 @@ export const MacPermissionsModal: React.FC<MacPermissionsModalProps> = ({ isOpen
             onClick={handleVerify}
             className="w-full py-2 px-4 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/15 text-slate-200 transition-all cursor-pointer border border-white/10"
           >
-            {isChecked ? '✓ Permission Granted!' : 'I Have Enabled It (Verify & Continue)'}
+            {isChecked ? 'Permission Granted' : 'I Have Enabled It (Verify and Continue)'}
           </button>
         </div>
       </div>

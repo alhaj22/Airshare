@@ -1,19 +1,13 @@
 import React from 'react';
 import { Zap, Monitor, Wifi, ChevronDown, Command } from 'lucide-react';
 import type { ConnectionStatus, SystemInfo } from '../types';
+import { OsIcon } from './OsIcon';
 
 interface HeaderProps {
   systemInfo: SystemInfo | null;
   status: ConnectionStatus;
   onToggleActiveScreen: () => void;
   onOpenShortcuts?: () => void;
-}
-
-function getOsIcon(os: string) {
-  const o = (os || '').toLowerCase();
-  if (o.includes('mac')) return '🍎';
-  if (o.includes('win')) return '🪟';
-  return '🐧';
 }
 
 function getStatusInfo(status: ConnectionStatus) {
@@ -27,13 +21,13 @@ function getStatusInfo(status: ConnectionStatus) {
     case 'hosting':
       return {
         dot: '#f59e0b',
-        label: 'Waiting for client…',
+        label: 'Waiting for client...',
         pulse: true,
       };
     case 'client':
       return {
         dot: '#0ea5e9',
-        label: 'Joining…',
+        label: 'Joining...',
         pulse: true,
       };
     default:
@@ -58,53 +52,55 @@ export const Header: React.FC<HeaderProps> = ({
     <header
       className="flex items-center justify-between px-5 py-3 select-none"
       style={{
-        background: 'rgba(10,13,18,0.95)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        background: '#0f1319',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
         position: 'sticky',
         top: 0,
         zIndex: 50,
       }}
     >
-      {/* Left — Brand */}
+      {/* Left: Brand */}
       <div className="flex items-center gap-3">
         <div
-          className="flex h-7 w-7 items-center justify-center rounded-lg"
+          className="flex h-7 w-7 items-center justify-center rounded-lg border border-sky-500/30"
           style={{
-            background: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)',
-            boxShadow: '0 2px 10px rgba(14,165,233,0.4)',
+            background: '#0284c7',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
           }}
         >
           <Zap className="h-4 w-4 text-white" strokeWidth={2.5} />
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-bold" style={{ color: '#f1f5f9', letterSpacing: '-0.01em' }}>
+          <span className="text-sm font-bold text-slate-100 tracking-tight">
             AirDesk
           </span>
           <span
-            className="text-[10px] font-mono rounded px-1.5 py-0.5"
-            style={{ background: 'rgba(14,165,233,0.1)', color: '#38bdf8', border: '1px solid rgba(14,165,233,0.2)' }}
+            className="text-[10px] font-mono rounded px-1.5 py-0.5 border"
+            style={{
+              background: 'rgba(14,165,233,0.1)',
+              color: '#38bdf8',
+              borderColor: 'rgba(14,165,233,0.25)',
+            }}
           >
             KVM
           </span>
         </div>
       </div>
 
-      {/* Center — Status */}
+      {/* Center: Status */}
       <div className="flex items-center gap-2">
         <div
           className="h-2 w-2 rounded-full"
           style={{
             background: dot,
             boxShadow: pulse ? `0 0 6px ${dot}` : 'none',
-            animation: pulse ? 'dot-pulse-anim 2s ease-in-out infinite' : 'none',
           }}
         />
-        <span className="text-xs" style={{ color: '#94a3b8' }}>{label}</span>
+        <span className="text-xs text-slate-400">{label}</span>
 
         {isConnected && (
           <>
-            <span style={{ color: '#1e293b' }}>•</span>
+            <span className="text-slate-700">•</span>
             <button
               onClick={onToggleActiveScreen}
               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer"
@@ -128,7 +124,7 @@ export const Header: React.FC<HeaderProps> = ({
         )}
       </div>
 
-      {/* Right — Shortcuts & Device info */}
+      {/* Right: Shortcuts and Device info */}
       <div className="flex items-center gap-2">
         {onOpenShortcuts && (
           <button
@@ -148,11 +144,11 @@ export const Header: React.FC<HeaderProps> = ({
 
         {systemInfo?.local_ip && (
           <div
-            className="hidden sm:flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs"
+            className="hidden sm:flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs border"
             style={{
               background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.06)',
-              color: '#475569',
+              borderColor: 'rgba(255,255,255,0.08)',
+              color: '#94a3b8',
             }}
           >
             <Wifi className="h-3 w-3" />
@@ -161,14 +157,14 @@ export const Header: React.FC<HeaderProps> = ({
         )}
         {systemInfo && (
           <div
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs"
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs border"
             style={{
               background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.06)',
-              color: '#64748b',
+              borderColor: 'rgba(255,255,255,0.08)',
+              color: '#94a3b8',
             }}
           >
-            <span>{getOsIcon(systemInfo.os)}</span>
+            <OsIcon os={systemInfo.os} className="h-3 w-3 text-slate-300" />
             <span className="max-w-[120px] truncate">{systemInfo.device_name}</span>
           </div>
         )}

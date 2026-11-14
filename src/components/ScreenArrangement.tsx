@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { ConnectionStatus, DiscoveredDevice, ScreenArrangementType, SystemInfo } from '../types';
+import { OsIcon } from './OsIcon';
 import {
   Monitor,
   MousePointer2,
@@ -23,14 +24,6 @@ interface ScreenArrangementProps {
   onArrangementChange: (arr: ScreenArrangementType, vOffsetRatio?: number, hOffsetRatio?: number) => void;
   onSimulateEdgeCross: () => void;
   onDeviceDrop?: (device: DiscoveredDevice) => void;
-}
-
-function getOsIcon(os?: string) {
-  const o = (os || '').toLowerCase();
-  if (o.includes('mac')) return '🍎';
-  if (o.includes('win')) return '🪟';
-  if (o.includes('linux')) return '🐧';
-  return '💻';
 }
 
 export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
@@ -531,8 +524,8 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
           >
             {/* Top row: Label + OS icon */}
             <div className="flex items-center justify-between text-[10px] font-mono font-bold text-white/90">
-              <span className="flex items-center gap-1">
-                <span>{getOsIcon(hostOs)}</span>
+              <span className="flex items-center gap-1.5">
+                <OsIcon os={hostOs} className="h-3 w-3" />
                 <span>PRIMARY</span>
               </span>
               <span className="text-[9px] opacity-80">{hostW}×{hostH}</span>
@@ -601,8 +594,8 @@ export const ScreenArrangement: React.FC<ScreenArrangementProps> = ({
           >
             {/* Top row: Label + OS icon */}
             <div className="flex items-center justify-between text-[10px] font-mono font-bold text-white/90">
-              <span className="flex items-center gap-1">
-                <span>{getOsIcon(clientOs)}</span>
+              <span className="flex items-center gap-1.5">
+                <OsIcon os={clientOs} className="h-3 w-3" />
                 <span>{isConnected ? 'REMOTE' : 'CLIENT'}</span>
               </span>
               <span className="text-[9px] opacity-80">{clientW}×{clientH}</span>

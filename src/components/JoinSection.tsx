@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Search, Zap, Wifi, ArrowRight, Loader2, Globe } from 'lucide-react';
+import { Search, Zap, Wifi, ArrowRight, Loader2, Globe, AlertCircle } from 'lucide-react';
 import type { ConnectionStatus, DiscoveredDevice } from '../types';
+import { OsIcon } from './OsIcon';
 
 interface JoinSectionProps {
   status: ConnectionStatus;
@@ -11,9 +12,9 @@ interface JoinSectionProps {
 
 function getOsLabel(os: string) {
   const o = os.toLowerCase();
-  if (o.includes('mac')) return { icon: '🍎', label: 'macOS' };
-  if (o.includes('win')) return { icon: '🪟', label: 'Windows' };
-  return { icon: '🐧', label: 'Linux' };
+  if (o.includes('mac')) return 'macOS';
+  if (o.includes('win')) return 'Windows';
+  return 'Linux';
 }
 
 export const JoinSection: React.FC<JoinSectionProps> = ({
@@ -125,7 +126,10 @@ export const JoinSection: React.FC<JoinSectionProps> = ({
           </div>
 
           {error && (
-            <p className="text-xs" style={{ color: '#f87171' }}>⚠ {error}</p>
+            <div className="flex items-center gap-1.5 text-xs text-red-400">
+              <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
           )}
 
           <button
@@ -136,7 +140,7 @@ export const JoinSection: React.FC<JoinSectionProps> = ({
             {loading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Connecting…
+                Connecting...
               </>
             ) : (
               <>
@@ -160,7 +164,7 @@ export const JoinSection: React.FC<JoinSectionProps> = ({
 
             <div className="space-y-2">
               {discoveredDevices.map((device) => {
-                const { icon, label } = getOsLabel(device.os);
+                const label = getOsLabel(device.os);
                 return (
                   <button
                     key={device.device_id}
@@ -180,10 +184,10 @@ export const JoinSection: React.FC<JoinSectionProps> = ({
                     }}
                   >
                     <div
-                      className="flex h-9 w-9 items-center justify-center rounded-lg flex-shrink-0 text-lg"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg flex-shrink-0 text-slate-300"
                       style={{ background: 'rgba(255,255,255,0.05)' }}
                     >
-                      {icon}
+                      <OsIcon os={device.os} className="h-4 w-4" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate" style={{ color: '#e2e8f0' }}>

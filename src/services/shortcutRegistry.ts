@@ -1,14 +1,14 @@
 import type { ShortcutCategory, ShortcutItem } from '../types';
 
 export const SHORTCUT_CATEGORIES: { id: ShortcutCategory; label: string; icon: string }[] = [
-  { id: 'basic', label: 'Basic', icon: '⚡' },
-  { id: 'window', label: 'Window Management', icon: '🪟' },
-  { id: 'file', label: 'File Management', icon: '📁' },
-  { id: 'screenshot', label: 'Screenshot & Record', icon: '📸' },
-  { id: 'browser', label: 'Browser', icon: '🌐' },
-  { id: 'text', label: 'Text Editing', icon: '✍️' },
-  { id: 'system', label: 'System', icon: '⚙️' },
-  { id: 'multimonitor', label: 'Multi-Monitor', icon: '🖥️' },
+  { id: 'basic', label: 'Basic', icon: 'zap' },
+  { id: 'window', label: 'Window Management', icon: 'layout' },
+  { id: 'file', label: 'File Management', icon: 'folder' },
+  { id: 'screenshot', label: 'Screenshot & Record', icon: 'camera' },
+  { id: 'browser', label: 'Browser', icon: 'globe' },
+  { id: 'text', label: 'Text Editing', icon: 'type' },
+  { id: 'system', label: 'System', icon: 'settings' },
+  { id: 'multimonitor', label: 'Multi-Monitor', icon: 'monitor' },
 ];
 
 export const SHORTCUT_REGISTRY: ShortcutItem[] = [
