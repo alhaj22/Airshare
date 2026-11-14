@@ -145,15 +145,19 @@ impl MouseEdgeMonitor {
         network_tx: mpsc::UnboundedSender<NetworkMessage>,
         ui_event_tx: mpsc::UnboundedSender<String>,
     ) {
-        self.is_running.store(true, Ordering::SeqCst);
-        let is_running = self.is_running.clone();
-
         if let Ok(mut tx) = MOUSE_HOOK_TX.lock() {
             *tx = Some(network_tx);
         }
         if let Ok(mut ui_tx) = UI_EVENT_TX.lock() {
             *ui_tx = Some(ui_event_tx);
         }
+
+        // Idempotency: if the monitor thread is already running, updating the sender is sufficient.
+        if self.is_running.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        let is_running = self.is_running.clone();
 
         #[cfg(target_os = "macos")]
         {
@@ -475,7 +479,7 @@ impl MouseEdgeMonitor {
     }
 
     pub fn stop(&self) {
-        self.is_running.store(false, Ordering::SeqCst);
+        clear_mouse_hook_sender();
     }
 }
 

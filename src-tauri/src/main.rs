@@ -252,6 +252,7 @@ async fn create_connection_pin(
     let disc_clone = state.discovery.clone();
     let edge_mon_status = state.edge_monitor.clone();
     let kb_hook_status = state.keyboard_hook.clone();
+    let clip_watcher_status = state.clipboard_watcher.clone();
     let app_handle_status = app_handle.clone();
 
     tauri::async_runtime::spawn(async move {
@@ -272,6 +273,7 @@ async fn create_connection_pin(
                 kb_hook_status.update_active_screen(ActiveScreen::Host);
                 clear_keyboard_hook_sender();
                 clear_mouse_hook_sender();
+                clip_watcher_status.stop();
                 let _ = app_handle_status.emit("session_ended", ());
             }
         }
@@ -439,6 +441,7 @@ async fn join_connection(
     let session_slot = state.current_session.clone();
     let edge_mon_status = state.edge_monitor.clone();
     let kb_hook_status = state.keyboard_hook.clone();
+    let clip_watcher_status = state.clipboard_watcher.clone();
     let client_slot = state.client.clone();
     let app_handle_status = app_handle.clone();
 
@@ -455,6 +458,7 @@ async fn join_connection(
                 kb_hook_status.update_active_screen(ActiveScreen::Host);
                 clear_keyboard_hook_sender();
                 clear_mouse_hook_sender();
+                clip_watcher_status.stop();
                 let _ = app_handle_status.emit("session_ended", ());
             }
         }
@@ -647,6 +651,7 @@ async fn disconnect_all(
     state.keyboard_hook.update_active_screen(ActiveScreen::Host);
     clear_keyboard_hook_sender();
     clear_mouse_hook_sender();
+    state.clipboard_watcher.stop();
 
     let _ = app_handle.emit("session_ended", ());
     Ok(())

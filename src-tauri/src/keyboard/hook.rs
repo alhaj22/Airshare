@@ -127,9 +127,6 @@ impl KeyboardHookManager {
         network_tx: mpsc::UnboundedSender<NetworkMessage>,
         switch_back_tx: mpsc::UnboundedSender<()>,
     ) {
-        self.is_running.store(true, Ordering::SeqCst);
-        let is_running = self.is_running.clone();
-
         if let Ok(mut tx) = KB_HOOK_TX.lock() {
             *tx = Some(network_tx);
         }
@@ -141,6 +138,13 @@ impl KeyboardHookManager {
                 *scr = *init_screen;
             }
         }
+
+        // Idempotency: if the hook thread is already running, updating the sender is sufficient.
+        if self.is_running.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        let is_running = self.is_running.clone();
 
         #[cfg(windows)]
         {
@@ -312,7 +316,7 @@ impl KeyboardHookManager {
     }
 
     pub fn stop(&self) {
-        self.is_running.store(false, Ordering::SeqCst);
+        clear_keyboard_hook_sender();
     }
 }
 
