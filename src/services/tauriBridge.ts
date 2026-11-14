@@ -68,21 +68,24 @@ webP2P.onSessionStarted((session) => {
 });
 
 webP2P.onSessionEnded(() => {
-  mockState.mode = 'idle';
-  mockState.role = undefined;
-  mockState.pin = undefined;
-  mockState.pinExpires = undefined;
-  mockState.peerDevice = undefined;
-  mockState.peerIp = undefined;
-  mockState.session = undefined;
+  // Only transition to idle if we were in an active connected session!
+  if (mockState.mode === 'connected') {
+    mockState.mode = 'idle';
+    mockState.role = undefined;
+    mockState.pin = undefined;
+    mockState.pinExpires = undefined;
+    mockState.peerDevice = undefined;
+    mockState.peerIp = undefined;
+    mockState.session = undefined;
 
-  sessionEndedListeners.forEach((cb) => {
-    try {
-      cb();
-    } catch (err) {
-      console.error('[WebP2P] sessionEnded error:', err);
-    }
-  });
+    sessionEndedListeners.forEach((cb) => {
+      try {
+        cb();
+      } catch (err) {
+        console.error('[WebP2P] sessionEnded error:', err);
+      }
+    });
+  }
 });
 
 // Simulated in-memory state for development & browser testing

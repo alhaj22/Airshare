@@ -121,10 +121,37 @@ class WebP2PService {
   }
 
   /**
+   * Internal reset of peer & data connections WITHOUT notifying session ended listeners
+   */
+  private cleanupPeer() {
+    if (this.activeConn) {
+      try {
+        this.activeConn.close();
+      } catch {
+        // ignore
+      }
+      this.activeConn = null;
+    }
+
+    if (this.peer) {
+      try {
+        this.peer.destroy();
+      } catch {
+        // ignore
+      }
+      this.peer = null;
+    }
+
+    this.currentPin = null;
+    this.currentRole = null;
+    this.activeSession = null;
+  }
+
+  /**
    * Host starts waiting for incoming peer connections using the 6-digit PIN as the Peer ID
    */
   public async startHosting(pin: string): Promise<string> {
-    this.disconnect();
+    this.cleanupPeer();
     this.currentPin = pin;
     this.currentRole = 'host';
 
@@ -146,6 +173,17 @@ class WebP2PService {
           clearTimeout(openTimeout);
           console.log('[WebP2P] Host listening on peer ID:', id);
           resolve(pin);
+        });
+
+        this.peer.on('disconnected', () => {
+          console.log('[WebP2P] Host peer disconnected from signaling, reconnecting...');
+          if (this.peer && !this.peer.destroyed) {
+            try {
+              this.peer.reconnect();
+            } catch (err) {
+              console.warn('[WebP2P] Reconnect error:', err);
+            }
+          }
         });
 
         this.peer.on('error', (err) => {
@@ -227,13 +265,21 @@ class WebP2PService {
     });
 
     conn.on('close', () => {
-      console.log('[WebP2P] Client disconnected');
-      this.disconnect();
+      console.log('[WebP2P] Client connection closed');
+      if (this.activeSession) {
+        this.disconnect();
+      } else {
+        this.activeConn = null;
+      }
     });
 
     conn.on('error', (err) => {
       console.warn('[WebP2P] Connection error:', err);
-      this.disconnect();
+      if (this.activeSession) {
+        this.disconnect();
+      } else {
+        this.activeConn = null;
+      }
     });
   }
 
@@ -246,7 +292,7 @@ class WebP2PService {
       throw new Error('Please enter a valid 6-digit PIN');
     }
 
-    this.disconnect();
+    this.cleanupPeer();
     this.currentRole = 'client';
 
     return new Promise((resolve, reject) => {
@@ -450,9 +496,11 @@ class WebP2PService {
   }
 
   /**
-   * Disconnect current session and cleanup P2P channel
+   * Disconnect current active session and cleanup P2P channel
    */
   public disconnect() {
+    const hadActiveSession = this.activeSession !== null;
+
     if (this.activeConn) {
       try {
         if (this.activeConn.open) {
@@ -478,13 +526,16 @@ class WebP2PService {
     this.currentRole = null;
     this.activeSession = null;
 
-    this.sessionEndedListeners.forEach((cb) => {
-      try {
-        cb();
-      } catch (e) {
-        console.error(e);
-      }
-    });
+    // Only notify listeners if an active connected session was genuinely running
+    if (hadActiveSession) {
+      this.sessionEndedListeners.forEach((cb) => {
+        try {
+          cb();
+        } catch (e) {
+          console.error(e);
+        }
+      });
+    }
   }
 }
 
