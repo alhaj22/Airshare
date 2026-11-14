@@ -1,5 +1,61 @@
-import { Peer, type DataConnection } from 'peerjs';
 import type { ActiveSession, DeviceOS } from '../types';
+
+// Standalone WebRTC PeerJS interfaces so Vite & TypeScript never fail if peerjs is missing
+export interface Peer {
+  id?: string;
+  destroyed?: boolean;
+  on(event: 'open', cb: (id: string) => void): void;
+  on(event: 'disconnected', cb: () => void): void;
+  on(event: 'error', cb: (err: any) => void): void;
+  on(event: 'connection', cb: (conn: DataConnection) => void): void;
+  on(event: string, cb: (...args: any[]) => void): void;
+  connect(id: string, options?: { reliable?: boolean }): DataConnection;
+  destroy(): void;
+  reconnect(): void;
+}
+
+export interface DataConnection {
+  peer: string;
+  open: boolean;
+  on(event: 'open', cb: () => void): void;
+  on(event: 'data', cb: (data: unknown) => void): void;
+  on(event: 'close', cb: () => void): void;
+  on(event: 'error', cb: (err: any) => void): void;
+  on(event: string, cb: (...args: any[]) => void): void;
+  send(data: any): void;
+  close(): void;
+}
+
+let cachedPeerConstructor: any = null;
+
+async function getPeerConstructor(): Promise<any> {
+  if (cachedPeerConstructor) return cachedPeerConstructor;
+
+  // 1. Check if Peer is already in window scope (e.g. injected or CDN script tag)
+  if (typeof window !== 'undefined' && (window as any).Peer) {
+    cachedPeerConstructor = (window as any).Peer;
+    return cachedPeerConstructor;
+  }
+
+  // 2. Try importing local peerjs package with @vite-ignore to prevent Vite build/dev analysis crash
+  try {
+    // @ts-ignore
+    const mod = await import(/* @vite-ignore */ 'peerjs');
+    cachedPeerConstructor = mod.Peer || mod.default || mod;
+    return cachedPeerConstructor;
+  } catch {
+    // 3. Fallback to esm.sh CDN so browser/web mode works out-of-the-box without manual npm install
+    try {
+      // @ts-ignore
+      const cdn = await import(/* @vite-ignore */ 'https://esm.sh/peerjs@1.5.5?bundle');
+      cachedPeerConstructor = cdn.Peer || cdn.default || cdn;
+      return cachedPeerConstructor;
+    } catch (err) {
+      console.warn('[WebP2P] PeerJS is unavailable. Run `npm install peerjs` or verify network connection.', err);
+      return null;
+    }
+  }
+}
 
 export interface P2PHandshakeMessage {
   type: 'CLIENT_HELLO' | 'HOST_ACCEPT' | 'AUTH_FAILED' | 'DISCONNECT';
@@ -155,27 +211,34 @@ class WebP2PService {
     this.currentPin = pin;
     this.currentRole = 'host';
 
+    const Peer = await getPeerConstructor();
+    if (!Peer) {
+      console.warn('[WebP2P] Peer constructor unavailable. Operating in standalone network mode.');
+      return pin;
+    }
+
     return new Promise((resolve) => {
       try {
         const peerId = `airdesk-v1-${pin}`;
-        this.peer = new Peer(peerId, {
+        const hostPeer = new Peer(peerId, {
           debug: 1,
           config: {
             iceServers: ICE_SERVERS,
           },
         });
+        this.peer = hostPeer;
 
         const openTimeout = setTimeout(() => {
           resolve(pin);
         }, 5000);
 
-        this.peer.on('open', (id) => {
+        hostPeer.on('open', (id: string) => {
           clearTimeout(openTimeout);
           console.log('[WebP2P] Host listening on peer ID:', id);
           resolve(pin);
         });
 
-        this.peer.on('disconnected', () => {
+        hostPeer.on('disconnected', () => {
           console.log('[WebP2P] Host peer disconnected from signaling, reconnecting...');
           if (this.peer && !this.peer.destroyed) {
             try {
@@ -186,12 +249,12 @@ class WebP2PService {
           }
         });
 
-        this.peer.on('error', (err) => {
+        hostPeer.on('error', (err: any) => {
           console.warn('[WebP2P] Host peer error:', err);
           resolve(pin);
         });
 
-        this.peer.on('connection', (conn) => {
+        hostPeer.on('connection', (conn: DataConnection) => {
           console.log('[WebP2P] Incoming connection from client:', conn.peer);
           this.handleIncomingConnection(conn);
         });
@@ -209,7 +272,7 @@ class WebP2PService {
       console.log('[WebP2P] Data connection channel opened with client');
     });
 
-    conn.on('data', (raw) => {
+    conn.on('data', (raw: unknown) => {
       const msg = raw as WebP2PMessage;
       if (msg.type === 'CLIENT_HELLO') {
         if (msg.pin !== this.currentPin && msg.pin !== 'auto_connect') {
@@ -273,7 +336,7 @@ class WebP2PService {
       }
     });
 
-    conn.on('error', (err) => {
+    conn.on('error', (err: any) => {
       console.warn('[WebP2P] Connection error:', err);
       if (this.activeSession) {
         this.disconnect();
@@ -294,6 +357,11 @@ class WebP2PService {
 
     this.cleanupPeer();
     this.currentRole = 'client';
+
+    const Peer = await getPeerConstructor();
+    if (!Peer) {
+      throw new Error('WebRTC P2P service is unavailable. Please run `npm install` or check your internet connection.');
+    }
 
     return new Promise((resolve, reject) => {
       try {
@@ -316,7 +384,7 @@ class WebP2PService {
           );
         }, 12000);
 
-        clientPeer.on('open', (myId) => {
+        clientPeer.on('open', (myId: string) => {
           console.log('[WebP2P] Client peer initialized:', myId, 'Connecting to:', targetPeerId);
           const conn = clientPeer.connect(targetPeerId, { reliable: true });
           this.activeConn = conn;
@@ -333,7 +401,7 @@ class WebP2PService {
             });
           });
 
-          conn.on('data', (raw) => {
+          conn.on('data', (raw: unknown) => {
             const msg = raw as WebP2PMessage;
             if (msg.type === 'HOST_ACCEPT') {
               clearTimeout(timeoutTimer);
@@ -383,14 +451,14 @@ class WebP2PService {
             this.disconnect();
           });
 
-          conn.on('error', (err) => {
+          conn.on('error', (err: any) => {
             clearTimeout(timeoutTimer);
             this.disconnect();
             reject(err);
           });
         });
 
-        clientPeer.on('error', (err) => {
+        clientPeer.on('error', (err: any) => {
           clearTimeout(timeoutTimer);
           console.warn('[WebP2P] Client peer error:', err);
           if (err.type === 'peer-unavailable') {
