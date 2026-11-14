@@ -117,7 +117,7 @@ export function useAirDesk() {
         const targetIp = lastSessionPeer.current.ip;
         showNotification('Connection lost. Reconnecting…', 'info');
         reconnectTimer.current = window.setTimeout(() => {
-          joinHost(targetIp, 'auto_connect').catch(() => {
+          joinHost('auto_connect', targetIp).catch(() => {
             lastSessionPeer.current = null;
           });
         }, 2000);
@@ -170,11 +170,11 @@ export function useAirDesk() {
     }
   };
 
-  const joinHost = async (hostIp: string, pin: string) => {
+  const joinHost = async (pin: string, hostIp?: string) => {
     try {
-      showNotification('Connecting…', 'info');
-      const session = await api.joinConnection(hostIp, pin);
-      lastSessionPeer.current = { ip: hostIp };
+      showNotification('Connecting with pairing key…', 'info');
+      const session = await api.joinConnection(pin, hostIp);
+      lastSessionPeer.current = { ip: session.peer_ip };
       setStatus({
         mode: 'connected',
         session,

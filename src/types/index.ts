@@ -50,6 +50,7 @@ export interface DiscoveredDevice {
   ip: string;
   port: number;
   is_host: boolean;
+  host_pin?: string;
 }
 
 export interface SystemInfo {

@@ -16,6 +16,7 @@ pub struct DiscoveredDevice {
     pub ip: String,
     pub port: u16,
     pub is_host: bool,
+    pub host_pin: Option<String>,
     #[serde(skip)]
     pub last_seen: Option<Instant>,
 }
@@ -28,6 +29,7 @@ struct BeaconPacket {
     pub os: String,
     pub is_host: bool,
     pub port: u16,
+    pub host_pin: Option<String>,
 }
 
 pub struct DiscoveryBeacon {
@@ -36,6 +38,7 @@ pub struct DiscoveryBeacon {
     os: String,
     tcp_port: u16,
     is_host: Arc<RwLock<bool>>,
+    host_pin: Arc<RwLock<Option<String>>>,
     is_running: Arc<RwLock<bool>>,
     devices: Arc<RwLock<HashMap<String, DiscoveredDevice>>>,
 }
@@ -48,6 +51,7 @@ impl DiscoveryBeacon {
             os,
             tcp_port,
             is_host: Arc::new(RwLock::new(false)),
+            host_pin: Arc::new(RwLock::new(None)),
             is_running: Arc::new(RwLock::new(false)),
             devices: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -55,6 +59,14 @@ impl DiscoveryBeacon {
 
     pub async fn set_is_host(&self, host: bool) {
         *self.is_host.write().await = host;
+        if !host {
+            *self.host_pin.write().await = None;
+        }
+    }
+
+    pub async fn set_is_host_with_pin(&self, host: bool, pin: Option<String>) {
+        *self.is_host.write().await = host;
+        *self.host_pin.write().await = pin;
     }
 
     pub async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -69,6 +81,7 @@ impl DiscoveryBeacon {
         let os = self.os.clone();
         let tcp_port = self.tcp_port;
         let is_host_flag = self.is_host.clone();
+        let host_pin_flag = self.host_pin.clone();
         let is_running_flag = self.is_running.clone();
         let devices_map = self.devices.clone();
 
@@ -88,6 +101,7 @@ impl DiscoveryBeacon {
                     os: os.clone(),
                     is_host: *is_host_flag.read().await,
                     port: tcp_port,
+                    host_pin: host_pin_flag.read().await.clone(),
                 };
 
                 if let Ok(json_bytes) = serde_json::to_vec(&packet) {
@@ -117,6 +131,7 @@ impl DiscoveryBeacon {
                                     ip: src_addr.ip().to_string(),
                                     port: packet.port,
                                     is_host: packet.is_host,
+                                    host_pin: packet.host_pin,
                                     last_seen: Some(Instant::now()),
                                 },
                             );

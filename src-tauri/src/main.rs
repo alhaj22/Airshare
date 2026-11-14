@@ -211,8 +211,8 @@ async fn create_connection_pin(
         mgr.generate_new_pin()
     };
 
-    // Mark discovery beacon as host
-    state.discovery.set_is_host(true).await;
+    // Mark discovery beacon as host with active PIN
+    state.discovery.set_is_host_with_pin(true, Some(pin.clone())).await;
 
     // Start TCP server
     let (incoming_tx, mut incoming_rx) = mpsc::unbounded_channel::<NetworkMessage>();
@@ -395,11 +395,35 @@ async fn create_connection_pin(
 
 #[tauri::command]
 async fn join_connection(
-    host_ip: String,
+    host_ip: Option<String>,
     pin: String,
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<ActiveSession, String> {
+    let clean_pin = pin.trim().to_string();
+    if clean_pin.is_empty() {
+        return Err("Pairing PIN cannot be empty".to_string());
+    }
+
+    // Resolve target IP automatically if host_ip is omitted or empty
+    let target_ip = match host_ip.filter(|ip| !ip.trim().is_empty()) {
+        Some(ip) => ip.trim().to_string(),
+        None => {
+            let devices = state.discovery.get_discovered_devices().await;
+            if let Some(dev) = devices.iter().find(|d| d.host_pin.as_deref() == Some(&clean_pin)) {
+                dev.ip.clone()
+            } else if let Some(dev) = devices.iter().find(|d| d.is_host) {
+                dev.ip.clone()
+            } else if devices.len() == 1 {
+                devices[0].ip.clone()
+            } else if devices.is_empty() {
+                return Err("No hosting computer found on this local network. Please ensure the host has generated a PIN.".to_string());
+            } else {
+                return Err("Multiple devices discovered on network. Please select host from list.".to_string());
+            }
+        }
+    };
+
     let (incoming_tx, mut incoming_rx) = mpsc::unbounded_channel::<NetworkMessage>();
     let (status_tx, mut status_rx) = mpsc::unbounded_channel::<String>();
 
@@ -417,7 +441,7 @@ async fn join_connection(
     );
 
     let session = client
-        .connect(&host_ip, 42426, &pin, incoming_tx, status_tx)
+        .connect(&target_ip, 42426, &clean_pin, incoming_tx, status_tx)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -637,7 +661,7 @@ async fn disconnect_all(
         let mut mgr = state.pin_manager.write().await;
         mgr.disconnect();
     }
-    state.discovery.set_is_host(false).await;
+    state.discovery.set_is_host_with_pin(false, None).await;
 
     if let Some(mut s) = state.server.write().await.take() {
         s.stop().await;

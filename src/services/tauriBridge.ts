@@ -19,6 +19,35 @@ const isTauri =
   (Boolean((window as unknown as { __TAURI__?: unknown }).__TAURI__) ||
     Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__));
 
+// Web Mode Realtime Cross-Tab & Cross-Window Synchronizer
+interface WebSyncPacket {
+  type:
+    | 'HOST_PIN_ANNOUNCED'
+    | 'CLIENT_JOIN_REQUESTED'
+    | 'HOST_JOIN_ACCEPTED'
+    | 'SESSION_DISCONNECTED'
+    | 'SCREEN_FOCUS_CHANGED';
+  senderId?: string;
+  pin?: string;
+  hostName?: string;
+  hostOs?: DeviceOS;
+  hostIp?: string;
+  clientName?: string;
+  clientOs?: DeviceOS;
+  clientIp?: string;
+  activeScreen?: 'host' | 'client';
+  expires?: number;
+}
+
+const myTabId = 'tab_' + Math.random().toString(36).substring(2, 9);
+const syncChannel =
+  typeof window !== 'undefined' && 'BroadcastChannel' in window
+    ? new BroadcastChannel('airdesk_web_p2p_channel')
+    : null;
+
+const sessionStartedListeners = new Set<(session: ActiveSession) => void>();
+const sessionEndedListeners = new Set<() => void>();
+
 // Simulated in-memory state for development & browser testing
 let mockMappingMode: MappingMode = 'smart_universal';
 let mockCustomConfig: CustomModifierConfig = {
@@ -92,6 +121,7 @@ let mockKeyboards: KeyboardDeviceInfo[] = [
 
 const mockState: {
   mode: 'idle' | 'hosting' | 'client' | 'connected';
+  role?: 'host' | 'client';
   pin?: string;
   pinExpires?: number;
   peerDevice?: string;
@@ -121,16 +151,148 @@ const mockState: {
       port: 42426,
       is_host: false,
     },
-    {
-      device_id: 'dev_thinkpad_win',
-      device_name: 'ThinkPad X1 Yoga (Windows 11)',
-      os: 'windows',
-      ip: '192.168.1.105',
-      port: 42426,
-      is_host: false,
-    },
   ],
 };
+
+// Wire up Web BroadcastChannel events for real-time multi-tab sync
+if (syncChannel) {
+  syncChannel.onmessage = (event: MessageEvent<WebSyncPacket>) => {
+    const data = event.data;
+    if (!data || data.senderId === myTabId) return;
+
+    switch (data.type) {
+      case 'HOST_PIN_ANNOUNCED': {
+        if (data.pin && data.hostName && data.hostIp) {
+          const existingIdx = mockState.discoveredDevices.findIndex(
+            (d) => d.device_id === 'host_active_web'
+          );
+          const dev: DiscoveredDevice = {
+            device_id: 'host_active_web',
+            device_name: data.hostName,
+            os: data.hostOs || 'windows',
+            ip: data.hostIp,
+            port: 42426,
+            is_host: true,
+            host_pin: data.pin,
+          };
+          if (existingIdx >= 0) {
+            mockState.discoveredDevices[existingIdx] = dev;
+          } else {
+            mockState.discoveredDevices.unshift(dev);
+          }
+        }
+        break;
+      }
+
+      case 'CLIENT_JOIN_REQUESTED': {
+        // Someone entered our PIN from another tab/browser window!
+        if (
+          mockState.mode === 'hosting' &&
+          mockState.pin &&
+          (mockState.pin === data.pin || data.pin === 'auto_connect')
+        ) {
+          mockState.mode = 'connected';
+          mockState.role = 'host';
+          mockState.peerDevice = data.clientName || 'MacBook Pro Client';
+          mockState.peerOs = data.clientOs || 'macos';
+          mockState.peerIp = data.clientIp || '192.168.1.45';
+
+          const hostSession: ActiveSession = {
+            session_id: 'web_sess_' + Date.now(),
+            peer_device_id: 'client_' + (data.clientIp || '192.168.1.45'),
+            peer_name: mockState.peerDevice,
+            peer_os: mockState.peerOs,
+            peer_ip: mockState.peerIp,
+            peer_screen_width: 1920,
+            peer_screen_height: 1080,
+            role: 'host',
+            connected_at: Math.floor(Date.now() / 1000),
+          };
+
+          // Notify this Host tab's listeners so UI immediately updates to Connected!
+          sessionStartedListeners.forEach((cb) => {
+            try {
+              cb(hostSession);
+            } catch (err) {
+              console.error('Host session started cb error:', err);
+            }
+          });
+
+          // Send confirmation back to the Client tab
+          syncChannel?.postMessage({
+            type: 'HOST_JOIN_ACCEPTED',
+            senderId: myTabId,
+            pin: data.pin,
+            hostName: 'Windows Laptop (Host)',
+            hostOs: 'windows',
+            hostIp: '192.168.1.102',
+            clientName: mockState.peerDevice,
+            clientOs: mockState.peerOs,
+            clientIp: mockState.peerIp,
+          });
+        }
+        break;
+      }
+
+      case 'HOST_JOIN_ACCEPTED': {
+        // Host has verified our PIN and accepted connection!
+        if (mockState.mode !== 'connected') {
+          mockState.mode = 'connected';
+          mockState.role = 'client';
+          mockState.peerDevice = data.hostName || 'Windows Laptop (Host)';
+          mockState.peerOs = data.hostOs || 'windows';
+          mockState.peerIp = data.hostIp || '192.168.1.102';
+
+          const clientSession: ActiveSession = {
+            session_id: 'web_sess_' + Date.now(),
+            peer_device_id: 'host_' + (data.hostIp || '192.168.1.102'),
+            peer_name: mockState.peerDevice,
+            peer_os: mockState.peerOs,
+            peer_ip: mockState.peerIp,
+            peer_screen_width: 1920,
+            peer_screen_height: 1080,
+            role: 'client',
+            connected_at: Math.floor(Date.now() / 1000),
+          };
+
+          sessionStartedListeners.forEach((cb) => {
+            try {
+              cb(clientSession);
+            } catch (err) {
+              console.error('Client session started cb error:', err);
+            }
+          });
+        }
+        break;
+      }
+
+      case 'SESSION_DISCONNECTED': {
+        mockState.mode = 'idle';
+        mockState.role = undefined;
+        mockState.pin = undefined;
+        mockState.pinExpires = undefined;
+        mockState.peerDevice = undefined;
+        mockState.peerIp = undefined;
+
+        sessionEndedListeners.forEach((cb) => {
+          try {
+            cb();
+          } catch (err) {
+            console.error('Session ended cb error:', err);
+          }
+        });
+        break;
+      }
+
+      case 'SCREEN_FOCUS_CHANGED': {
+        if (data.activeScreen) {
+          mockState.activeScreen = data.activeScreen;
+        }
+        break;
+      }
+    }
+  };
+}
 
 export const api = {
   isTauriEnvironment(): boolean {
@@ -186,8 +348,29 @@ export const api = {
     // Generate random 6-digit key
     const pin = Math.floor(100000 + Math.random() * 900000).toString();
     mockState.mode = 'hosting';
+    mockState.role = 'host';
     mockState.pin = pin;
     mockState.pinExpires = Date.now() + 300 * 1000;
+
+    const hostPayload = {
+      pin,
+      hostName: 'Windows Laptop (Host)',
+      hostOs: 'windows' as DeviceOS,
+      hostIp: '192.168.1.102',
+      expires: mockState.pinExpires,
+    };
+
+    try {
+      localStorage.setItem('airdesk_active_host', JSON.stringify(hostPayload));
+    } catch {
+      // ignore
+    }
+
+    syncChannel?.postMessage({
+      type: 'HOST_PIN_ANNOUNCED',
+      senderId: myTabId,
+      ...hostPayload,
+    });
 
     return {
       pin,
@@ -196,24 +379,129 @@ export const api = {
     };
   },
 
-  async joinConnection(hostIp: string, pin: string): Promise<ActiveSession> {
+  async joinConnection(pin: string, hostIp?: string): Promise<ActiveSession> {
+    const cleanPin = pin.trim();
+    if (!cleanPin) {
+      throw new Error('Please enter the 6-digit pairing PIN');
+    }
+
+    if (cleanPin.length !== 6 && cleanPin !== 'auto_connect') {
+      throw new Error('Pairing PIN must be exactly 6 digits');
+    }
+
     if (isTauri) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        return await invoke<ActiveSession>('join_connection', { hostIp, pin });
+        return await invoke<ActiveSession>('join_connection', {
+          pin: cleanPin,
+          hostIp: hostIp?.trim() || null,
+        });
       } catch (err) {
         throw new Error(String(err));
       }
     }
 
-    // Mock validation
-    if (pin.trim().length !== 6 && pin.trim() !== 'auto_connect') {
-      throw new Error('Please enter a valid 6-digit PIN');
+    // ─── Web Simulation ───
+    // Case 1: Single-tab testing (User clicks host PIN and connects in same tab)
+    if (mockState.mode === 'hosting' && (mockState.pin === cleanPin || cleanPin === 'auto_connect')) {
+      mockState.mode = 'connected';
+      mockState.role = 'host';
+      mockState.peerDevice = 'MacBook Pro 16″ (Paired)';
+      mockState.peerOs = 'macos';
+      mockState.peerIp = '192.168.1.45';
+
+      const session: ActiveSession = {
+        session_id: 'web_sess_' + Date.now(),
+        peer_device_id: 'dev_macbook_pro',
+        peer_name: mockState.peerDevice,
+        peer_os: mockState.peerOs,
+        peer_ip: mockState.peerIp,
+        peer_screen_width: 1920,
+        peer_screen_height: 1080,
+        role: 'host',
+        connected_at: Math.floor(Date.now() / 1000),
+      };
+
+      sessionStartedListeners.forEach((cb) => {
+        try {
+          cb(session);
+        } catch (e) {
+          console.error(e);
+        }
+      });
+
+      return session;
     }
 
-    const mockSession: ActiveSession = {
-      session_id: 'mock_sess_' + Date.now(),
-      peer_device_id: 'host_' + hostIp,
+    // Case 2: Multi-tab Web Mode (Check localStorage / broadcast channel)
+    let savedHost: {
+      pin: string;
+      hostName: string;
+      hostOs: DeviceOS;
+      hostIp: string;
+      expires: number;
+    } | null = null;
+
+    try {
+      const raw = localStorage.getItem('airdesk_active_host');
+      if (raw) savedHost = JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+
+    const hostFound =
+      savedHost && (savedHost.pin === cleanPin || cleanPin === 'auto_connect')
+        ? savedHost
+        : null;
+
+    if (hostFound) {
+      const clientName = 'Client Device (MacBook)';
+      const clientOs: DeviceOS = 'macos';
+      const clientIp = '192.168.1.45';
+
+      // Send join request to the host tab
+      syncChannel?.postMessage({
+        type: 'CLIENT_JOIN_REQUESTED',
+        senderId: myTabId,
+        pin: cleanPin,
+        clientName,
+        clientOs,
+        clientIp,
+      });
+
+      mockState.mode = 'connected';
+      mockState.role = 'client';
+      mockState.peerDevice = hostFound.hostName || 'Windows Laptop (Host)';
+      mockState.peerOs = hostFound.hostOs || 'windows';
+      mockState.peerIp = hostFound.hostIp || '192.168.1.102';
+
+      const clientSession: ActiveSession = {
+        session_id: 'web_sess_' + Date.now(),
+        peer_device_id: 'host_' + mockState.peerIp,
+        peer_name: mockState.peerDevice,
+        peer_os: mockState.peerOs,
+        peer_ip: mockState.peerIp,
+        peer_screen_width: 1920,
+        peer_screen_height: 1080,
+        role: 'client',
+        connected_at: Math.floor(Date.now() / 1000),
+      };
+
+      sessionStartedListeners.forEach((cb) => {
+        try {
+          cb(clientSession);
+        } catch (e) {
+          console.error(e);
+        }
+      });
+
+      return clientSession;
+    }
+
+    // Case 3: Standalone Web Demo Fallback
+    const demoSession: ActiveSession = {
+      session_id: 'web_sess_' + Date.now(),
+      peer_device_id: 'host_demo',
       peer_name: 'Windows Laptop (Host)',
       peer_os: 'windows',
       peer_ip: hostIp || '192.168.1.102',
@@ -224,41 +512,62 @@ export const api = {
     };
 
     mockState.mode = 'connected';
-    mockState.peerDevice = mockSession.peer_name;
-    mockState.peerIp = mockSession.peer_ip;
+    mockState.role = 'client';
+    mockState.peerDevice = demoSession.peer_name;
     mockState.peerOs = 'windows';
+    mockState.peerIp = demoSession.peer_ip;
 
-    return mockSession;
+    sessionStartedListeners.forEach((cb) => {
+      try {
+        cb(demoSession);
+      } catch (e) {
+        console.error(e);
+      }
+    });
+
+    return demoSession;
   },
 
   async onSessionStarted(callback: (session: ActiveSession) => void): Promise<() => void> {
+    sessionStartedListeners.add(callback);
     if (isTauri) {
       try {
         const { listen } = await import('@tauri-apps/api/event');
         const unlisten = await listen<ActiveSession>('session_started', (event) => {
           callback(event.payload);
         });
-        return unlisten;
+        return () => {
+          sessionStartedListeners.delete(callback);
+          unlisten();
+        };
       } catch (err) {
         console.warn('Failed to listen to session_started', err);
       }
     }
-    return () => {};
+    return () => {
+      sessionStartedListeners.delete(callback);
+    };
   },
 
   async onSessionEnded(callback: () => void): Promise<() => void> {
+    sessionEndedListeners.add(callback);
     if (isTauri) {
       try {
         const { listen } = await import('@tauri-apps/api/event');
         const unlisten = await listen('session_ended', () => {
           callback();
         });
-        return unlisten;
+        return () => {
+          sessionEndedListeners.delete(callback);
+          unlisten();
+        };
       } catch (err) {
         console.warn('Failed to listen to session_ended', err);
       }
     }
-    return () => {};
+    return () => {
+      sessionEndedListeners.delete(callback);
+    };
   },
 
   async getDiscoveredDevices(): Promise<DiscoveredDevice[]> {
@@ -270,6 +579,31 @@ export const api = {
         console.warn('Tauri get_discovered_devices failed', err);
       }
     }
+
+    // In web mode: check localStorage if another tab is currently hosting
+    try {
+      const raw = localStorage.getItem('airdesk_active_host');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.expires > Date.now()) {
+          const exists = mockState.discoveredDevices.some((d) => d.device_id === 'host_active_web');
+          if (!exists) {
+            mockState.discoveredDevices.unshift({
+              device_id: 'host_active_web',
+              device_name: parsed.hostName || 'Host Computer',
+              os: parsed.hostOs || 'windows',
+              ip: parsed.hostIp || '192.168.1.102',
+              port: 42426,
+              is_host: true,
+              host_pin: parsed.pin,
+            });
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     return mockState.discoveredDevices;
   },
 
@@ -302,11 +636,33 @@ export const api = {
         console.warn('Failed to disconnect via Tauri', err);
       }
     }
+
+    try {
+      localStorage.removeItem('airdesk_active_host');
+      localStorage.removeItem('airdesk_active_session');
+    } catch {
+      // ignore
+    }
+
+    syncChannel?.postMessage({
+      type: 'SESSION_DISCONNECTED',
+      senderId: myTabId,
+    });
+
     mockState.mode = 'idle';
+    mockState.role = undefined;
     mockState.pin = undefined;
     mockState.pinExpires = undefined;
     mockState.peerDevice = undefined;
     mockState.peerIp = undefined;
+
+    sessionEndedListeners.forEach((cb) => {
+      try {
+        cb();
+      } catch (e) {
+        console.error(e);
+      }
+    });
   },
 
   async getConnectionStatus(): Promise<ConnectionStatus> {
@@ -330,6 +686,9 @@ export const api = {
       peer_device: mockState.peerDevice,
       peer_ip: mockState.peerIp,
       peer_os: mockState.peerOs,
+      peer_screen_width: 1920,
+      peer_screen_height: 1080,
+      role: mockState.role,
       active_screen: mockState.activeScreen,
       pin: mockState.pin,
       pin_remaining_seconds: remainingSeconds,
@@ -347,10 +706,16 @@ export const api = {
     }
     const next = mockState.activeScreen === 'host' ? 'client' : 'host';
     mockState.activeScreen = next;
+
+    syncChannel?.postMessage({
+      type: 'SCREEN_FOCUS_CHANGED',
+      senderId: myTabId,
+      activeScreen: next,
+    });
+
     return next;
   },
 
-  // Helper for mock demo to simulate peer connecting or cursor jumping
   simulatePeerConnect(name: string, os: DeviceOS, ip: string) {
     mockState.mode = 'connected';
     mockState.peerDevice = name;
@@ -384,6 +749,7 @@ export const api = {
       }
     }
   },
+
   async getKeyboardMappingMode(): Promise<MappingMode> {
     if (isTauri) {
       try {

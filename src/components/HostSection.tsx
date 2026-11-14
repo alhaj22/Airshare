@@ -107,7 +107,11 @@ export const HostSection: React.FC<HostSectionProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-2 pt-2">
+            <p className="text-[11px] text-zinc-500 text-center">
+              Enter this 6-digit PIN on the other device. No IP address needed.
+            </p>
+
+            <div className="flex items-center gap-2 pt-1">
               <button
                 onClick={handleCopy}
                 className="btn-ghost flex-1 justify-center !py-2"
