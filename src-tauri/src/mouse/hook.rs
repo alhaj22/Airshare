@@ -34,6 +34,46 @@ lazy_static::lazy_static! {
     static ref HORIZONTAL_OFFSET_RATIO: std::sync::RwLock<f32> = std::sync::RwLock::new(0.0);
     static ref VIRTUAL_REMOTE_POS: std::sync::RwLock<(f32, f32)> = std::sync::RwLock::new((0.0, 0.5));
     static ref LAST_SWITCH_TIME: std::sync::RwLock<Option<std::time::Instant>> = std::sync::RwLock::new(None);
+    static ref IS_CURSOR_LOCKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static ref DEAD_CORNERS: std::sync::RwLock<(bool, bool, bool, bool, i32)> = std::sync::RwLock::new((false, false, false, false, 15));
+    static ref SWITCH_DELAY_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+}
+
+pub fn set_cursor_locked(locked: bool) {
+    IS_CURSOR_LOCKED.store(locked, Ordering::SeqCst);
+}
+
+pub fn is_cursor_locked() -> bool {
+    IS_CURSOR_LOCKED.load(Ordering::SeqCst)
+}
+
+pub fn set_dead_corners(top_left: bool, top_right: bool, bottom_left: bool, bottom_right: bool, corner_size: i32) {
+    if let Ok(mut dc) = DEAD_CORNERS.write() {
+        *dc = (top_left, top_right, bottom_left, bottom_right, corner_size);
+    }
+}
+
+pub fn set_switch_delay_ms(delay: u64) {
+    SWITCH_DELAY_MS.store(delay, Ordering::SeqCst);
+}
+
+pub fn is_in_dead_corner(x: i32, y: i32, screen_w: i32, screen_h: i32) -> bool {
+    if let Ok(dc) = DEAD_CORNERS.read() {
+        let (tl, tr, bl, br, sz) = *dc;
+        if tl && x <= sz && y <= sz {
+            return true;
+        }
+        if tr && x >= (screen_w - sz) && y <= sz {
+            return true;
+        }
+        if bl && x <= sz && y >= (screen_h - sz) {
+            return true;
+        }
+        if br && x >= (screen_w - sz) && y >= (screen_h - sz) {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn get_current_active_screen() -> ActiveScreen {
@@ -215,7 +255,7 @@ impl MouseEdgeMonitor {
                         };
 
                         if active_screen == ActiveScreen::Host {
-                            if in_cooldown {
+                            if in_cooldown || is_cursor_locked() || is_in_dead_corner(x, y, screen_w, screen_h) {
                                 return CallNextHookEx(0, n_code, w_param, l_param);
                             }
 
@@ -580,7 +620,7 @@ mod macos_mouse {
         };
 
         if active_screen == ActiveScreen::Host {
-            if in_cooldown {
+            if in_cooldown || is_cursor_locked() || is_in_dead_corner(x, y, screen_w, screen_h) {
                 return event;
             }
 

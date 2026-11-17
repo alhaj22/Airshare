@@ -968,4 +968,74 @@ export const api = {
       display_server: undefined,
     };
   },
+
+  async getLocalIpList(): Promise<string[]> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<string[]>('get_local_ip_list');
+      } catch (err) {
+        console.warn('Failed to get local IP list from Tauri:', err);
+      }
+    }
+    return ['192.168.1.15', '10.0.0.8'];
+  },
+
+  async getServerFingerprint(): Promise<string> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<string>('get_server_fingerprint');
+      } catch (err) {
+        console.warn('Failed to get server fingerprint from Tauri:', err);
+      }
+    }
+    return '4A:8C:9B:1F:72:03:DD:91:EE:54:30:AC:67:12:F4:9E';
+  },
+
+  async setCursorLocked(locked: boolean): Promise<boolean> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<boolean>('set_cursor_locked', { locked });
+      } catch (err) {
+        console.warn('Failed to toggle cursor lock in Tauri:', err);
+      }
+    }
+    return locked;
+  },
+
+  async setDeadCorners(
+    topLeft: boolean,
+    topRight: boolean,
+    bottomLeft: boolean,
+    bottomRight: boolean,
+    cornerSize: number
+  ): Promise<void> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_dead_corners', {
+          topLeft,
+          topRight,
+          bottomLeft,
+          bottomRight,
+          cornerSize,
+        });
+      } catch (err) {
+        console.warn('Failed to update dead corners in Tauri:', err);
+      }
+    }
+  },
+
+  async setSwitchDelayMs(delay: number): Promise<void> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_switch_delay_ms', { delay });
+      } catch (err) {
+        console.warn('Failed to update switch delay in Tauri:', err);
+      }
+    }
+  },
 };

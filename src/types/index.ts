@@ -223,3 +223,85 @@ export interface SystemHardwareMetrics {
   display_server?: string;
 }
 
+// ─── Deskflow Specific Architecture & Screen Grid Types ───
+
+export type DeskflowMode = 'server' | 'client';
+
+export interface DeskflowDeadCorners {
+  topLeft: boolean;
+  topRight: boolean;
+  bottomLeft: boolean;
+  bottomRight: boolean;
+}
+
+export interface DeskflowScreen {
+  id: string;
+  name: string; // Must match client's screen name / hostname
+  isServer: boolean;
+  row: number; // 0..4 in 5x5 grid
+  col: number; // 0..4 in 5x5 grid
+  os?: DeviceOS;
+  ip?: string;
+  isConnected?: boolean;
+  aliases?: string[];
+  deadCorners: DeskflowDeadCorners;
+  cornerSizePx: number; // default 15
+  switchDelayMs: number; // default 0 or 250
+}
+
+export interface DeskflowServerSettings {
+  port: number; // default 24800
+  interfaceBinding: string; // default "0.0.0.0"
+  switchDelayMs: number; // default 0
+  doubleTapSwitchMs: number; // default 250
+  cornerSizePx: number; // default 15
+  deadCorners: DeskflowDeadCorners;
+  clipboardSharing: boolean;
+  maxClipboardSizeKb: number; // default 3072 (3MB)
+  syncScreensavers: boolean;
+  checkClientAliveMs: number; // default 3000
+  enableTls: boolean;
+  requireClientCert: boolean;
+  fingerprint?: string;
+}
+
+export interface DeskflowClientSettings {
+  screenName: string; // local machine name
+  autoConfig: boolean; // mDNS auto discovery
+  serverAddress: string; // "IP:port"
+  enableTls: boolean;
+  trustedServerFingerprints: string[];
+}
+
+export type DeskflowActionType =
+  | 'switchToScreen'
+  | 'switchInDirection'
+  | 'lockCursorToScreen'
+  | 'toggleSharing';
+
+export interface DeskflowHotkeyAction {
+  id: string;
+  hotkey: string; // e.g. "Ctrl+Alt+Left", "ScrollLock"
+  action: DeskflowActionType;
+  targetScreen?: string;
+  direction?: 'left' | 'right' | 'up' | 'down';
+  description: string;
+}
+
+export type DeskflowLogLevel =
+  | 'INFO'
+  | 'NOTE'
+  | 'DEBUG'
+  | 'DEBUG1'
+  | 'WARNING'
+  | 'ERROR';
+
+export interface DeskflowLogEntry {
+  id: string;
+  timestamp: string;
+  level: DeskflowLogLevel;
+  source: 'server' | 'client' | 'input' | 'network' | 'system';
+  message: string;
+}
+
+

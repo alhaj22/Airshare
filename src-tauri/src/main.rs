@@ -917,6 +917,52 @@ fn get_hardware_system_info() -> platform::SystemHardwareMetrics {
     platform::get_hardware_metrics()
 }
 
+#[tauri::command]
+fn get_local_ip_list() -> Vec<String> {
+    if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
+        let mut ips = Vec::new();
+        for (_name, ip) in interfaces {
+            if !ip.is_loopback() && ip.is_ipv4() {
+                let s = ip.to_string();
+                if !ips.contains(&s) {
+                    ips.push(s);
+                }
+            }
+        }
+        if !ips.is_empty() {
+            return ips;
+        }
+    }
+    vec!["127.0.0.1".to_string()]
+}
+
+#[tauri::command]
+fn get_server_fingerprint() -> String {
+    use sha2::{Digest, Sha256};
+    let host = hostname::get().map(|h| h.to_string_lossy().to_string()).unwrap_or_else(|_| "Deskflow".to_string());
+    let mut hasher = Sha256::new();
+    hasher.update(b"DESKFLOW_TLS_FINGERPRINT_v1");
+    hasher.update(host.as_bytes());
+    let res = hasher.finalize();
+    res.iter().take(16).map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(":")
+}
+
+#[tauri::command]
+fn set_cursor_locked(locked: bool) -> bool {
+    mouse::set_cursor_locked(locked);
+    locked
+}
+
+#[tauri::command]
+fn set_dead_corners(top_left: bool, top_right: bool, bottom_left: bool, bottom_right: bool, corner_size: i32) {
+    mouse::set_dead_corners(top_left, top_right, bottom_left, bottom_right, corner_size);
+}
+
+#[tauri::command]
+fn set_switch_delay_ms(delay: u64) {
+    mouse::set_switch_delay_ms(delay);
+}
+
 fn main() {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
@@ -1020,7 +1066,12 @@ fn main() {
             get_hid_keyboards,
             calibrate_keyboard_layout,
             set_gaming_rgb_mode,
-            get_hardware_system_info
+            get_hardware_system_info,
+            get_local_ip_list,
+            get_server_fingerprint,
+            set_cursor_locked,
+            set_dead_corners,
+            set_switch_delay_ms
         ])
         .run(tauri::generate_context!())
         .expect("error while running AirDesk application");
