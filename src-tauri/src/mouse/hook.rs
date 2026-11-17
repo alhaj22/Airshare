@@ -536,7 +536,7 @@ mod macos_mouse {
         set_current_active_screen, ActiveScreen, ScreenArrangement,
         CURRENT_ACTIVE_SCREEN, CURRENT_ARRANGEMENT, LAST_SWITCH_TIME, MOUSE_HOOK_TX,
         REMOTE_SCREEN_SIZE, SCREEN_DIMENSIONS, UI_EVENT_TX, VERTICAL_OFFSET_RATIO,
-        HORIZONTAL_OFFSET_RATIO, VIRTUAL_REMOTE_POS,
+        HORIZONTAL_OFFSET_RATIO, VIRTUAL_REMOTE_POS, is_cursor_locked, is_in_dead_corner,
     };
     use crate::mouse::simulator::AIRDESK_MAC_MAGIC;
 
