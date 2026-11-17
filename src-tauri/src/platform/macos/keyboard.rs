@@ -81,13 +81,21 @@ fn check_usb_node(
             let pid = parse_hex_u16(node.get("product_id").and_then(|v| v.as_str()).unwrap_or(""));
 
             let is_apple = vid == 0x05AC || name_lower.contains("apple");
+            let layout_type = if active_layout.contains("JIS") {
+                "JIS".to_string()
+            } else if active_layout.contains("German") || active_layout.contains("French") || active_layout.contains("British") || active_layout.contains("ISO") {
+                "ISO".to_string()
+            } else {
+                "ANSI".to_string()
+            };
+
             keyboards.push(KeyboardDeviceInfo {
                 device_id: format!("mac-usb-{:04x}-{:04x}", vid, pid),
                 name: name.to_string(),
                 vendor_id: vid,
                 product_id: pid,
                 is_mac_keyboard: is_apple,
-                layout_type: if is_apple { "ANSI".to_string() } else { "Standard".to_string() },
+                layout_type,
                 connection_type: "USB".to_string(),
                 active_language_layout: active_layout.to_string(),
             });

@@ -48,6 +48,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     systemInfo,
     monitors,
     keyboards,
+    hidKeyboards,
     hardwareMetrics,
     status,
     discoveredDevices,
@@ -270,6 +271,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <HardwareTelemetry
             monitors={monitors}
             keyboards={keyboards}
+            hidKeyboards={hidKeyboards}
             hardwareMetrics={hardwareMetrics}
             onBrightnessChange={updateMonitorBrightness}
             onContrastChange={updateMonitorContrast}

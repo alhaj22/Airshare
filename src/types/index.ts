@@ -141,7 +141,73 @@ export interface KeyboardDeviceInfo {
   layout_type: string;
   connection_type: string;
   active_language_layout: string;
+  usage_page?: number;
+  usage_id?: number;
+  gaming_capabilities?: GamingCapabilities;
 }
+
+export type GamingBrandType =
+  | 'logitech_g'
+  | 'razer'
+  | 'corsair'
+  | 'steel_series'
+  | 'hyper_x'
+  | 'redragon'
+  | 'keychron'
+  | 'standard';
+
+export type PhysicalLayoutType = 'ansi' | 'iso' | 'jis' | 'unknown';
+
+export interface GamingCapabilities {
+  brand: GamingBrandType;
+  model_name: string;
+  vendor_id: number;
+  product_id: number;
+  supports_nkro: boolean;
+  max_polling_rate_hz: number;
+  has_dedicated_macro_keys: boolean;
+  macro_key_count: number;
+  has_volume_wheel: boolean;
+  has_rgb_subsystem: boolean;
+  rgb_protocol?: string;
+  onboard_profiles_supported: boolean;
+}
+
+export interface HidDeviceInfo {
+  device_id: string;
+  name: string;
+  vendor_id: number;
+  product_id: number;
+  usage_page: number;
+  usage_id: number;
+  interface_number: number;
+  is_connected: boolean;
+  physical_layout: PhysicalLayoutType;
+  gaming_capabilities?: GamingCapabilities;
+}
+
+export interface LayoutCalibrationData {
+  key_0x64_present: boolean;
+  enter_is_iso: boolean;
+  has_ro_key: boolean;
+  has_yen_key: boolean;
+  detected_physical: PhysicalLayoutType;
+}
+
+export interface KeyboardLayoutProfile {
+  id: string;
+  name: string;
+  physical: PhysicalLayoutType;
+  has_altgr: boolean;
+  language_code: string;
+}
+
+export type RgbLightingMode =
+  | { type: 'off' }
+  | { type: 'static_color'; r: number; g: number; b: number }
+  | { type: 'breathing'; r: number; g: number; b: number; speed: number }
+  | { type: 'rainbow_wave'; speed: number }
+  | { type: 'reactive'; r: number; g: number; b: number };
 
 export interface SystemHardwareMetrics {
   cpu_name: string;

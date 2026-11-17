@@ -34,6 +34,7 @@ pub enum NetworkMessage {
 
     // Keyboard events
     KeyEvent(KeyEventPayload),
+    KeySync(KeySyncPayload),
 
     // Screen focus control
     SwitchScreen(SwitchScreenPayload),
@@ -131,10 +132,31 @@ pub struct MouseWheelPayload {
 pub struct KeyEventPayload {
     pub key_code: u32,
     pub key_char: Option<String>,
-    pub state: u8, // 0 = Up, 1 = Down
-    pub modifiers: u8, // Bitflags: 1=Shift, 2=Ctrl, 4=Alt, 8=Meta/Cmd
+    pub state: u8, // 0 = Up, 1 = Down, 2 = Repeat
+    pub modifiers: u8, // Bitflags: 1=Shift, 2=Ctrl, 4=Alt, 8=Meta/Cmd, 16=Fn, 32=AltGr
+    #[serde(default = "default_hid_page")]
+    pub hid_usage_page: u16,
+    #[serde(default)]
+    pub hid_usage: u16,
+    #[serde(default)]
+    pub device_id: Option<String>,
+    #[serde(default)]
+    pub sequence_number: u64,
+    #[serde(default)]
+    pub timestamp_us: u64,
     #[serde(default)]
     pub source_os: Option<String>,
+}
+
+fn default_hid_page() -> u16 {
+    0x0007 // Keyboard Page
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeySyncPayload {
+    pub active_keys: Vec<u16>,
+    pub active_modifiers: u8,
+    pub sequence_number: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

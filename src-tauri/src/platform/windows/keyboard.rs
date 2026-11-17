@@ -86,7 +86,7 @@ pub fn get_keyboards() -> Vec<KeyboardDeviceInfo> {
                                             "WirelessDongle".to_string()
                                         };
 
-                                        let layout_type = if is_apple {
+                                        let _layout_type = if is_apple {
                                             if active_layout.contains("JIS") {
                                                 "JIS".to_string()
                                             } else if active_layout.contains("UK") || active_layout.contains("German") || active_layout.contains("French") {
@@ -108,7 +108,28 @@ pub fn get_keyboards() -> Vec<KeyboardDeviceInfo> {
                                         } else if dev_path.contains("ACPI") {
                                             "Built-in Laptop Keyboard".to_string()
                                         } else {
-                                            format!("External Keyboard ({:04X}:{:04X})", vid, pid)
+                                            let gaming_ident = crate::keyboard::gaming_adapters::GamingDeviceAdapter::identify_gaming_device(vid, pid, "");
+                                            if gaming_ident.brand != crate::keyboard::gaming_adapters::GamingBrand::Standard {
+                                                gaming_ident.model_name
+                                            } else {
+                                                format!("External Keyboard ({:04X}:{:04X})", vid, pid)
+                                            }
+                                        };
+
+                                        let detected_layout = if is_apple {
+                                            if active_layout.contains("JIS") {
+                                                "JIS".to_string()
+                                            } else if active_layout.contains("UK") || active_layout.contains("German") || active_layout.contains("French") {
+                                                "ISO".to_string()
+                                            } else {
+                                                "ANSI".to_string()
+                                            }
+                                        } else if active_layout.contains("JIS") {
+                                            "JIS".to_string()
+                                        } else if active_layout.contains("UK") || active_layout.contains("German") || active_layout.contains("French") || active_layout.contains("Spanish") {
+                                            "ISO".to_string()
+                                        } else {
+                                            "ANSI".to_string()
                                         };
 
                                         keyboards.push(KeyboardDeviceInfo {
@@ -117,7 +138,7 @@ pub fn get_keyboards() -> Vec<KeyboardDeviceInfo> {
                                             vendor_id: vid,
                                             product_id: pid,
                                             is_mac_keyboard: is_apple,
-                                            layout_type,
+                                            layout_type: detected_layout,
                                             connection_type,
                                             active_language_layout: active_layout.clone(),
                                         });

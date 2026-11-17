@@ -353,7 +353,10 @@ async fn create_connection_pin(
                     m_sim.scroll(p.delta_x, p.delta_y);
                 }
                 NetworkMessage::KeyEvent(p) => {
-                    k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref(), p.modifiers, p.source_os.as_deref());
+                    k_sim.process_key_event(&p);
+                }
+                NetworkMessage::KeySync(p) => {
+                    k_sim.sync_key_state(&p.active_keys, p.active_modifiers);
                 }
                 NetworkMessage::Disconnect { reason } => {
                     log::info!("Peer explicitly disconnected: {}. Ending session.", reason);
@@ -538,7 +541,10 @@ async fn join_connection(
                     m_sim.scroll(p.delta_x, p.delta_y);
                 }
                 NetworkMessage::KeyEvent(p) => {
-                    k_sim.key_event(p.key_code, p.state == 1, p.key_char.as_deref(), p.modifiers, p.source_os.as_deref());
+                    k_sim.process_key_event(&p);
+                }
+                NetworkMessage::KeySync(p) => {
+                    k_sim.sync_key_state(&p.active_keys, p.active_modifiers);
                 }
                 NetworkMessage::ClipboardSync(p) => {
                     clip_watcher.apply_incoming_text(&p.text, p.hash).await;
@@ -889,6 +895,24 @@ fn get_connected_keyboards() -> Vec<platform::KeyboardDeviceInfo> {
 }
 
 #[tauri::command]
+fn get_hid_keyboards() -> Vec<keyboard::hid_manager::HidDeviceInfo> {
+    keyboard::hid_manager::GLOBAL_HID_MANAGER.refresh_all_devices()
+}
+
+#[tauri::command]
+fn calibrate_keyboard_layout(calibration: keyboard::layout_engine::LayoutCalibrationData) -> keyboard::layout_engine::KeyboardLayoutProfile {
+    keyboard::layout_engine::KeyboardLayoutEngine::calibrate(calibration)
+}
+
+#[tauri::command]
+fn set_gaming_rgb_mode(device_id: String, mode: keyboard::gaming_adapters::RgbLightingMode) -> Result<String, String> {
+    let dev = keyboard::hid_manager::GLOBAL_HID_MANAGER.get_device(&device_id)
+        .ok_or_else(|| "Device not found".to_string())?;
+    let caps = dev.gaming_capabilities.ok_or_else(|| "Device has no gaming adapter capabilities".to_string())?;
+    keyboard::gaming_adapters::GamingDeviceAdapter::apply_rgb_lighting(&caps, &mode)
+}
+
+#[tauri::command]
 fn get_hardware_system_info() -> platform::SystemHardwareMetrics {
     platform::get_hardware_metrics()
 }
@@ -993,6 +1017,9 @@ fn main() {
             set_monitor_contrast,
             set_monitor_input_source,
             get_connected_keyboards,
+            get_hid_keyboards,
+            calibrate_keyboard_layout,
+            set_gaming_rgb_mode,
             get_hardware_system_info
         ])
         .run(tauri::generate_context!())

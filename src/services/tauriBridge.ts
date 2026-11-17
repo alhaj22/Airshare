@@ -4,10 +4,14 @@ import type {
   CustomModifierConfig,
   DeviceOS,
   DiscoveredDevice,
+  HidDeviceInfo,
   HostPinResponse,
   KeyboardDeviceInfo,
+  KeyboardLayoutProfile,
+  LayoutCalibrationData,
   MappingMode,
   MonitorInfo,
+  RgbLightingMode,
   ScreenArrangementType,
   SystemHardwareMetrics,
   SystemInfo,
@@ -156,6 +160,84 @@ let mockKeyboards: KeyboardDeviceInfo[] = [
     layout_type: 'ANSI',
     connection_type: 'Internal',
     active_language_layout: 'US (QWERTY)',
+  },
+];
+
+let mockHidKeyboards: HidDeviceInfo[] = [
+  {
+    device_id: 'hid_corsair_k100',
+    name: 'Corsair K100 RGB Optical-Mechanical Keyboard',
+    vendor_id: 0x1b1c,
+    product_id: 0x1b89,
+    usage_page: 0x01,
+    usage_id: 0x06,
+    interface_number: 0,
+    is_connected: true,
+    physical_layout: 'ansi',
+    gaming_capabilities: {
+      brand: 'corsair',
+      model_name: 'Corsair K100 RGB',
+      vendor_id: 0x1b1c,
+      product_id: 0x1b89,
+      supports_nkro: true,
+      max_polling_rate_hz: 8000,
+      has_dedicated_macro_keys: true,
+      macro_key_count: 6,
+      has_volume_wheel: true,
+      has_rgb_subsystem: true,
+      rgb_protocol: 'corsair_cue',
+      onboard_profiles_supported: true,
+    },
+  },
+  {
+    device_id: 'hid_logitech_g915',
+    name: 'Logitech G915 LIGHTSPEED Wireless RGB',
+    vendor_id: 0x046d,
+    product_id: 0xc33f,
+    usage_page: 0x01,
+    usage_id: 0x06,
+    interface_number: 1,
+    is_connected: true,
+    physical_layout: 'ansi',
+    gaming_capabilities: {
+      brand: 'logitech_g',
+      model_name: 'Logitech G915 Lightspeed',
+      vendor_id: 0x046d,
+      product_id: 0xc33f,
+      supports_nkro: true,
+      max_polling_rate_hz: 1000,
+      has_dedicated_macro_keys: true,
+      macro_key_count: 5,
+      has_volume_wheel: true,
+      has_rgb_subsystem: true,
+      rgb_protocol: 'logitech_hidpp20',
+      onboard_profiles_supported: true,
+    },
+  },
+  {
+    device_id: 'hid_keychron_q1',
+    name: 'Keychron Q1 Pro Custom Mechanical Keyboard (ISO-DE)',
+    vendor_id: 0x3434,
+    product_id: 0x0240,
+    usage_page: 0x01,
+    usage_id: 0x06,
+    interface_number: 0,
+    is_connected: true,
+    physical_layout: 'iso',
+    gaming_capabilities: {
+      brand: 'keychron',
+      model_name: 'Keychron Q1 Pro',
+      vendor_id: 0x3434,
+      product_id: 0x0240,
+      supports_nkro: true,
+      max_polling_rate_hz: 1000,
+      has_dedicated_macro_keys: false,
+      macro_key_count: 0,
+      has_volume_wheel: true,
+      has_rgb_subsystem: true,
+      rgb_protocol: 'qmk_via',
+      onboard_profiles_supported: true,
+    },
   },
 ];
 
@@ -803,6 +885,62 @@ export const api = {
       }
     }
     return mockKeyboards;
+  },
+
+  async getHidKeyboards(): Promise<HidDeviceInfo[]> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<HidDeviceInfo[]>('get_hid_keyboards');
+      } catch (err) {
+        console.warn('Failed to get HID keyboards via Tauri:', err);
+      }
+    }
+    return mockHidKeyboards;
+  },
+
+  async calibrateKeyboardLayout(
+    calibration: LayoutCalibrationData
+  ): Promise<KeyboardLayoutProfile> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<KeyboardLayoutProfile>('calibrate_keyboard_layout', {
+          calibration,
+        });
+      } catch (err) {
+        console.warn('Failed to calibrate keyboard layout via Tauri:', err);
+      }
+    }
+    return {
+      id: calibration.detected_physical === 'iso' ? 'de_de' : 'en_us',
+      name:
+        calibration.detected_physical === 'iso'
+          ? 'Calibrated ISO Layout (European)'
+          : 'Calibrated ANSI Layout (US)',
+      physical: calibration.detected_physical,
+      has_altgr: calibration.detected_physical === 'iso',
+      language_code: calibration.detected_physical === 'iso' ? 'de' : 'en',
+    };
+  },
+
+  async setGamingRgbMode(
+    deviceId: string,
+    mode: RgbLightingMode
+  ): Promise<string> {
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<string>('set_gaming_rgb_mode', {
+          deviceId,
+          mode,
+        });
+      } catch (err) {
+        console.warn('Failed to set gaming RGB mode via Tauri:', err);
+        throw err;
+      }
+    }
+    return `Simulated RGB mode applied to ${deviceId}`;
   },
 
   async getHardwareSystemInfo(): Promise<SystemHardwareMetrics> {

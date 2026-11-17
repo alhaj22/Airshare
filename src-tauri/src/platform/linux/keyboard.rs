@@ -50,6 +50,13 @@ pub fn get_keyboards() -> Vec<KeyboardDeviceInfo> {
             } else if line.is_empty() {
                 if is_keyboard && !curr_name.is_empty() {
                     let is_apple = curr_vendor == 0x05AC || curr_name.to_lowercase().contains("apple");
+                    let layout_type = if layout_name.contains("jp") || layout_name.contains("jis") {
+                        "JIS".to_string()
+                    } else if layout_name.contains("de") || layout_name.contains("fr") || layout_name.contains("gb") || layout_name.contains("es") {
+                        "ISO".to_string()
+                    } else {
+                        "ANSI".to_string()
+                    };
                     let conn = match curr_bus {
                         0x0005 => "Bluetooth".to_string(),
                         0x0003 => "USB".to_string(),
@@ -63,7 +70,7 @@ pub fn get_keyboards() -> Vec<KeyboardDeviceInfo> {
                         vendor_id: curr_vendor,
                         product_id: curr_product,
                         is_mac_keyboard: is_apple,
-                        layout_type: if is_apple { "ANSI".to_string() } else { "Standard".to_string() },
+                        layout_type,
                         connection_type: conn,
                         active_language_layout: layout_name.clone(),
                     });

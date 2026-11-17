@@ -3,6 +3,7 @@ import { api } from '../services/tauriBridge';
 import type {
   ConnectionStatus,
   DiscoveredDevice,
+  HidDeviceInfo,
   KeyboardDeviceInfo,
   MonitorInfo,
   ScreenArrangementType,
@@ -14,6 +15,7 @@ export function useAirDesk() {
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [keyboards, setKeyboards] = useState<KeyboardDeviceInfo[]>([]);
+  const [hidKeyboards, setHidKeyboards] = useState<HidDeviceInfo[]>([]);
   const [hardwareMetrics, setHardwareMetrics] = useState<SystemHardwareMetrics | null>(null);
 
   const [status, setStatus] = useState<ConnectionStatus>({
@@ -60,13 +62,15 @@ export function useAirDesk() {
 
   const refreshHardware = useCallback(async () => {
     try {
-      const [mons, kbs, hw] = await Promise.all([
+      const [mons, kbs, hidKbs, hw] = await Promise.all([
         api.getConnectedMonitors(),
         api.getConnectedKeyboards(),
+        api.getHidKeyboards(),
         api.getHardwareSystemInfo(),
       ]);
       setMonitors(mons);
       setKeyboards(kbs);
+      setHidKeyboards(hidKbs);
       setHardwareMetrics(hw);
     } catch (err) {
       console.warn('Failed to refresh hardware metrics:', err);
@@ -271,6 +275,7 @@ export function useAirDesk() {
     systemInfo,
     monitors,
     keyboards,
+    hidKeyboards,
     hardwareMetrics,
     status,
     discoveredDevices,

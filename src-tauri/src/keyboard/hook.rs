@@ -16,6 +16,7 @@ lazy_static::lazy_static! {
     static ref SWITCH_BACK_TX: std::sync::Mutex<Option<mpsc::UnboundedSender<()>>> = std::sync::Mutex::new(None);
     static ref KB_ACTIVE_SCREEN: std::sync::RwLock<ActiveScreen> = std::sync::RwLock::new(ActiveScreen::Host);
     static ref LAST_ESC_TIMES: std::sync::Mutex<Vec<std::time::Instant>> = std::sync::Mutex::new(Vec::new());
+    pub static ref HOOK_STATE_MGR: crate::keyboard::state_manager::InputStateManager = crate::keyboard::state_manager::InputStateManager::new();
 }
 
 pub fn set_keyboard_active_screen(screen: ActiveScreen) {
@@ -261,12 +262,36 @@ impl KeyboardHookManager {
                                             None
                                         };
 
+                                        let is_ext = (kb.flags & 0x01) != 0;
+                                        let hid_usage = crate::keyboard::hid_types::win_vk_to_hid_usage(vk_code, is_ext);
+                                        let hid_page = if (0xAD..=0xB3).contains(&vk_code) {
+                                            crate::keyboard::hid_types::HID_USAGE_PAGE_CONSUMER
+                                        } else {
+                                            crate::keyboard::hid_types::HID_USAGE_PAGE_KEYBOARD
+                                        };
+
+                                        if is_down {
+                                            HOOK_STATE_MGR.record_key_down(hid_usage, modifiers);
+                                        } else {
+                                            HOOK_STATE_MGR.record_key_up(hid_usage, modifiers);
+                                        }
+
+                                        let timestamp_us = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .map(|d| d.as_micros() as u64)
+                                            .unwrap_or(0);
+
                                         let res = tx.send(NetworkMessage::KeyEvent(KeyEventPayload {
                                             key_code: vk_code,
                                             key_char: ch,
                                             state: if is_down { 1 } else { 0 },
                                             modifiers,
-                                            source_os: Some(if cfg!(windows) { "windows".to_string() } else if cfg!(target_os = "macos") { "macos".to_string() } else { "linux".to_string() }),
+                                            hid_usage_page: hid_page,
+                                            hid_usage,
+                                            device_id: None,
+                                            sequence_number: HOOK_STATE_MGR.next_sequence(),
+                                            timestamp_us,
+                                            source_os: Some("windows".to_string()),
                                         }));
 
                                         if res.is_ok() {
@@ -449,6 +474,18 @@ mod macos_keyboard {
                     _ => false,
                 };
 
+                let hid_usage = crate::keyboard::hid_types::mac_key_to_hid_usage(mac_key);
+                if mod_down {
+                    super::HOOK_STATE_MGR.record_key_down(hid_usage, modifiers);
+                } else {
+                    super::HOOK_STATE_MGR.record_key_up(hid_usage, modifiers);
+                }
+
+                let timestamp_us = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_micros() as u64)
+                    .unwrap_or(0);
+
                 let mut sent = false;
                 if let Ok(tx_guard) = KB_HOOK_TX.lock() {
                     if let Some(tx) = &*tx_guard {
@@ -457,6 +494,11 @@ mod macos_keyboard {
                             key_char: None,
                             state: if mod_down { 1 } else { 0 },
                             modifiers,
+                            hid_usage_page: crate::keyboard::hid_types::HID_USAGE_PAGE_KEYBOARD,
+                            hid_usage,
+                            device_id: None,
+                            sequence_number: super::HOOK_STATE_MGR.next_sequence(),
+                            timestamp_us,
                             source_os: Some("macos".to_string()),
                         }));
                         if res.is_ok() {
@@ -470,6 +512,18 @@ mod macos_keyboard {
                     return event;
                 }
             } else if is_down || is_up {
+                let hid_usage = crate::keyboard::hid_types::mac_key_to_hid_usage(mac_key);
+                if is_down {
+                    super::HOOK_STATE_MGR.record_key_down(hid_usage, modifiers);
+                } else {
+                    super::HOOK_STATE_MGR.record_key_up(hid_usage, modifiers);
+                }
+
+                let timestamp_us = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_micros() as u64)
+                    .unwrap_or(0);
+
                 let mut sent = false;
                 if let Ok(tx_guard) = KB_HOOK_TX.lock() {
                     if let Some(tx) = &*tx_guard {
@@ -478,6 +532,11 @@ mod macos_keyboard {
                             key_char: None,
                             state: if is_down { 1 } else { 0 },
                             modifiers,
+                            hid_usage_page: crate::keyboard::hid_types::HID_USAGE_PAGE_KEYBOARD,
+                            hid_usage,
+                            device_id: None,
+                            sequence_number: super::HOOK_STATE_MGR.next_sequence(),
+                            timestamp_us,
                             source_os: Some("macos".to_string()),
                         }));
                         if res.is_ok() {

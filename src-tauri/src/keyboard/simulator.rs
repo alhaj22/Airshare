@@ -296,15 +296,57 @@ pub fn mac_key_to_win_vk(mac_key: u16) -> u32 {
     }
 }
 
-pub struct KeyboardSimulator;
+pub struct KeyboardSimulator {
+    state_mgr: crate::keyboard::state_manager::InputStateManager,
+}
 
 impl KeyboardSimulator {
     pub fn new() -> Self {
-        Self
+        Self {
+            state_mgr: crate::keyboard::state_manager::InputStateManager::new(),
+        }
     }
 
-        pub fn release_all_modifiers(&self) {
+    pub fn release_all_modifiers(&self) {
         crate::keyboard::mapping::KeyboardMappingEngine::release_stuck_keys();
+        self.state_mgr.reset_modifiers();
+    }
+
+    pub fn sync_key_state(&self, active_keys: &[u16], active_modifiers: u8) {
+        let currently_pressed = self.state_mgr.get_active_keys();
+        for key in currently_pressed {
+            if !active_keys.contains(&key) {
+                // Key was released on remote machine; simulate key up locally
+                let (vk, _) = crate::keyboard::hid_types::hid_usage_to_win_vk(key);
+                self.key_event(vk, false, None, active_modifiers, None);
+                self.state_mgr.record_key_up(key, active_modifiers);
+            }
+        }
+        if active_modifiers == 0 {
+            self.release_all_modifiers();
+        }
+    }
+
+    pub fn process_key_event(&self, payload: &crate::network::protocol::KeyEventPayload) {
+        let hid_usage = if payload.hid_usage > 0 {
+            payload.hid_usage
+        } else {
+            crate::keyboard::hid_types::win_vk_to_hid_usage(payload.key_code, false)
+        };
+
+        if payload.state == 1 {
+            self.state_mgr.record_key_down(hid_usage, payload.modifiers);
+        } else {
+            self.state_mgr.record_key_up(hid_usage, payload.modifiers);
+        }
+
+        self.key_event(
+            payload.key_code,
+            payload.state == 1,
+            payload.key_char.as_deref(),
+            payload.modifiers,
+            payload.source_os.as_deref(),
+        );
     }
 
     pub fn key_event(
